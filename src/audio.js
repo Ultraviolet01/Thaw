@@ -1,4 +1,5 @@
-// All sound is synthesized with the Web Audio API, so the build ships no audio files.
+// Recorded sounds come from human-made CC0 library recordings (see audio/CREDITS.md) and play through
+// plain audio elements, which also work when index.html is opened straight from disk.
 // The music starts empty and each thaw unlocks one more layer.
 
 const PIANO = [440, 523.25, 659.25, 587.33, 523.25, 659.25, 783.99, 659.25];
@@ -6,6 +7,73 @@ const BELLS = [1318.51, 1567.98, 1174.66, 1046.5];
 const MASTER_LEVEL = 0.9;
 // The jam's theme by Jason Grace, played exactly as supplied. The rules allow it only unmodified.
 const THEME_SRC = 'audio/thatgamejam02_theme.wav';
+// Wind through a window: the ambient wind everywhere for now. The howling storm is kept for the hazards.
+const WIND_SRC = 'audio/sfx/wind-window.mp3';
+const STORM_SRC = 'audio/sfx/wind-storm.mp3';
+// Short cracks cut from one long recording of cracking ice.
+const CRACK_SRC = [1, 2, 3, 4, 5, 6].map((i) => `audio/sfx/ice-crack-${i}.mp3`);
+
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+// A recording that loops forever. Two copies crossfade over the seam so the loop has no gap or click.
+class FileLoop {
+  constructor(src, fade = 2.5) {
+    this.src = src;
+    this.fade = fade;
+    this.els = null;
+    this.cur = 0;
+    this.vol = 0;
+    this.target = 0;
+    this.muted = false;
+    this.timer = null;
+  }
+
+  set(v) {
+    this.target = clamp01(v);
+    if (!this.timer && (this.target > 0 || this.vol > 0)) this.timer = setInterval(() => this.tick(), 50);
+  }
+
+  setMuted(m) {
+    this.muted = m;
+    if (this.els) this.els.forEach((e) => { e.muted = m; });
+  }
+
+  tick() {
+    if (!this.els) {
+      this.els = [new Audio(this.src), new Audio(this.src)];
+      this.els.forEach((e) => { e.volume = 0; e.muted = this.muted; });
+      this.els[0].play().catch(() => {});
+    }
+    this.vol += (this.target - this.vol) * 0.12;
+    if (Math.abs(this.target - this.vol) < 0.002) this.vol = this.target;
+    const a = this.els[this.cur];
+    const b = this.els[1 - this.cur];
+    const d = a.duration;
+    let ka = 1;
+    let kb = 0;
+    if (d && a.currentTime > d - this.fade) {
+      if (b.paused) {
+        b.currentTime = 0;
+        b.play().catch(() => {});
+      }
+      ka = clamp01((d - a.currentTime) / this.fade);
+      kb = 1 - ka;
+    }
+    if (a.ended || (d && a.currentTime >= d - 0.05)) {
+      a.pause();
+      this.cur = 1 - this.cur;
+      ka = 0;
+      kb = 1;
+    }
+    a.volume = clamp01(this.vol * ka);
+    b.volume = clamp01(this.vol * kb);
+    if (this.vol === 0 && this.target === 0) {
+      this.els.forEach((e) => e.pause());
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+}
 
 export class GameAudio {
   constructor() {
@@ -14,6 +82,8 @@ export class GameAudio {
     this.unlocked = 0;
     this.layers = [];
     this.hums = new Map();
+    this.wind = new FileLoop(WIND_SRC);
+    this.storm = new FileLoop(STORM_SRC);
   }
 
   // Must run from a user gesture so the browser allows playback.
@@ -34,7 +104,6 @@ export class GameAudio {
     this.musicBus = this.gainNode(1, this.master);
     this.sfxBus = this.gainNode(1, this.master);
     this.noise = this.makeNoise(2);
-    this.startWind();
     this.buildLayers();
   }
 
@@ -52,30 +121,6 @@ export class GameAudio {
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
     return buf;
-  }
-
-  startWind() {
-    const ctx = this.ctx;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = 380;
-    band.Q.value = 0.6;
-    const g = this.gainNode(0.05, this.sfxBus);
-    this.windGain = g;
-    this.windBand = band;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.08;
-    const depth = ctx.createGain();
-    depth.gain.value = 0.03;
-    lfo.connect(depth);
-    depth.connect(g.gain);
-    src.connect(band);
-    band.connect(g);
-    src.start();
-    lfo.start();
   }
 
   buildLayers() {
@@ -161,15 +206,14 @@ export class GameAudio {
     src.stop(t + dur + 0.05);
   }
 
-  // 0 = a breath of wind, 1 = a gale: louder and higher.
+  // 0 = a breath of wind, 1 = a gale.
   setWind(amount) {
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-    const k = Math.max(0, Math.min(1, amount));
-    if (Math.abs((this.windLevel ?? -1) - k) < 0.01) return;
-    this.windLevel = k;
-    this.windGain.gain.setTargetAtTime(0.05 + 0.3 * k, now, 0.4);
-    this.windBand.frequency.setTargetAtTime(380 + 900 * k, now, 0.5);
+    this.wind.set(0.18 + 0.62 * clamp01(amount));
+  }
+
+  // The howling storm, for the hazards: 0 = none, 1 = full.
+  setStorm(amount) {
+    this.storm.set(0.9 * clamp01(amount));
   }
 
   // The prologue's warm music: the first three layers together, faded by k. Gameplay takes the layers back after.
@@ -260,8 +304,10 @@ export class GameAudio {
   }
 
   crack() {
-    if (!this.ctx) return;
-    this.noiseBurst(this.ctx.currentTime + 0.05, 0.07, 2500, 0.12);
+    if (this.muted) return;
+    const el = new Audio(CRACK_SRC[Math.floor(Math.random() * CRACK_SRC.length)]);
+    el.volume = 0.55 + Math.random() * 0.25;
+    el.play().catch(() => {});
   }
 
   melt() {
@@ -374,6 +420,8 @@ export class GameAudio {
   toggleMute() {
     this.muted = !this.muted;
     if (this.theme) this.theme.muted = this.muted;
+    this.wind.setMuted(this.muted);
+    this.storm.setMuted(this.muted);
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_LEVEL, this.ctx.currentTime, 0.05);
   }
 }
