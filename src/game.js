@@ -296,6 +296,9 @@ export class Game {
         }
       } else if (o.state === 'thawed') {
         o.spread = Math.min(1, o.spread + dt / SPREAD_SECONDS);
+      } else if (o.state === 'lost' && !o.gone && this.time - o.lostAt > 3.6) {
+        // The cold has taken it: it is gone from the world.
+        o.gone = true;
       }
     }
   }

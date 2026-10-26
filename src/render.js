@@ -483,11 +483,43 @@ export class Renderer {
   }
 
   drawObject(s, o, t) {
+    if (o.state === 'lost') {
+      this.drawLost(s, o, t);
+      return;
+    }
     if (o.gone) return;
     const warm = o.state === 'thawed' ? 1 : o.state === 'melting' ? o.meltT : 0;
     if (o.type === 'tree') this.drawPine(s, o.x, groundY(o.x) + 6, 175, o.seed, warm);
     else if (o.type === 'lantern') this.drawLantern(s, o, warm, t);
     else if (o.type === 'wanderer') this.drawWanderer(s, o, warm, t);
+  }
+
+  // What the cold took at a fork sinks into the snow and is gone, leaving only a low drift.
+  drawLost(s, o, t) {
+    const age = t - o.lostAt;
+    const sink = clamp01((age - 1) / 2.6);
+    if (sink < 1) {
+      s.save();
+      // Clip to above the snow line, so the part that has sunk is hidden.
+      s.beginPath();
+      s.moveTo(o.x - 200, -10);
+      s.lineTo(o.x + 200, -10);
+      for (let x = o.x + 200; x >= o.x - 200; x -= 10) s.lineTo(x, groundY(x) + 2);
+      s.closePath();
+      s.clip();
+      s.translate(0, sink * sink * 150);
+      s.globalAlpha = 1 - 0.5 * sink;
+      if (o.type === 'lantern') this.drawLantern(s, o, 0, t);
+      else if (o.type === 'wanderer') this.drawWanderer(s, o, 0, t);
+      s.restore();
+    }
+    const m = clamp01((age - 1) / 2);
+    if (m > 0) {
+      s.fillStyle = 'rgba(208,224,234,0.95)';
+      s.beginPath();
+      s.ellipse(o.x, groundY(o.x) + 3, 22 + 16 * m, 8 * m, 0, Math.PI, 0);
+      s.fill();
+    }
   }
 
   // A layered pine with drooping, uneven branches and snow on each tier.
@@ -945,7 +977,8 @@ export class Renderer {
       const b = o.bounds;
       if (o.state === 'lost') {
         // What the cold took: the frost closes over it, thick and pale, its cracks sealed.
-        const k = clamp01((t - o.lostAt) / 2);
+        // Then it fades away with what it covered.
+        const k = clamp01((t - o.lostAt) / 2) * (1 - clamp01((t - o.lostAt - 3) / 1.5));
         glow(f, b.cx, b.cy, b.reach + 50, '238,246,252', 0.55 * k);
         glow(f, b.cx, b.cy, b.reach * 0.6, '245,250,255', 0.35 * k);
         if (k < 1 && o.progress > 0) this.drawCracks(f, o);
