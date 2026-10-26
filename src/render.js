@@ -1,4 +1,4 @@
-import { VIEW_W, VIEW_H, PULSE, THRESHOLDS } from './config.js';
+import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS } from './config.js';
 import { groundY } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, INTRO_LOCK } from './game.js';
@@ -33,12 +33,13 @@ const VILLAGERS = [
 // The colour of the snow surface, used where feet sink into it.
 const SNOW_GROUND = '#8ea5b1';
 
-const SMALL_W = 320;
+// The shrunk copy the frost is made from. Its width follows the view's.
+let SMALL_W = 320;
 const SMALL_H = 180;
 const TILE_W = 1024;
 // The frost and its melt mask are built at half size: frost is soft anyway, and this keeps frame times low.
 const FROST_SCALE = 0.5;
-const FW = VIEW_W * FROST_SCALE;
+let FW = VIEW.w * FROST_SCALE;
 const FH = VIEW_H * FROST_SCALE;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -140,17 +141,7 @@ export class Renderer {
   constructor(cv, level) {
     this.canvas = cv;
     this.ctx = cv.getContext('2d');
-    this.scene = canvas(VIEW_W, VIEW_H);
-    this.sctx = this.scene.getContext('2d');
-    this.small = canvas(SMALL_W, SMALL_H);
-    this.smctx = this.small.getContext('2d');
-    this.frost = canvas(FW, FH);
-    this.fctx = this.frost.getContext('2d');
-    this.mask = canvas(FW, FH);
-    this.mctx = this.mask.getContext('2d');
-    // Writing gets its own mask so it stays sharp while melt edges are feathered.
-    this.textMask = canvas(FW, FH);
-    this.tctx = this.textMask.getContext('2d');
+    // The offscreen canvases (scene, frost, masks) are built in resize(), sized to the view.
     this.crystals = this.makeCrystals();
     this.grain = [0, 1, 2].map((i) => this.makeGrain(i));
     this.grainPatterns = this.grain.map((g) => this.ctx.createPattern(g, 'repeat'));
@@ -164,10 +155,10 @@ export class Renderer {
 
     const r = rng(42);
     this.stars = Array.from({ length: 110 }, () => ({
-      x: r() * VIEW_W, y: r() * VIEW_H * 0.55, s: 1 + r() * 1.4, a: 0.15 + r() * 0.35, tw: 0.5 + r() * 2,
+      x: r() * VIEW_MAX_W, y: r() * VIEW_H * 0.55, s: 1 + r() * 1.4, a: 0.15 + r() * 0.35, tw: 0.5 + r() * 2,
     }));
     this.snow = Array.from({ length: 140 }, () => ({
-      x: r() * VIEW_W, y: r() * VIEW_H, s: 0.8 + r() * 2, vy: 14 + r() * 24, vx: -8 + r() * 5, par: 0.3 + r() * 0.7, ph: r() * 6,
+      x: r() * VIEW_MAX_W, y: r() * VIEW_H, s: 0.8 + r() * 2, vy: 14 + r() * 24, vx: -8 + r() * 5, par: 0.3 + r() * 0.7, ph: r() * 6,
     }));
     this.mistBlobs = level.mist.map((m) => {
       const n = Math.round((m.x1 - m.x0) / 55);
@@ -190,9 +181,76 @@ export class Renderer {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(innerWidth * dpr);
     this.canvas.height = Math.round(innerHeight * dpr);
-    this.scale = Math.min(this.canvas.width / VIEW_W, this.canvas.height / VIEW_H);
-    this.ox = (this.canvas.width - VIEW_W * this.scale) / 2;
+    // Widen the view to the screen's shape (within limits), then rebuild the offscreen canvases to match.
+    const w = Math.round(Math.max(VIEW_MIN_W, Math.min(VIEW_MAX_W, (VIEW_H * innerWidth) / Math.max(1, innerHeight))) / 2) * 2;
+    if (w !== VIEW.w || !this.scene) {
+      VIEW.w = w;
+      FW = VIEW.w * FROST_SCALE;
+      SMALL_W = Math.round(VIEW.w / 4);
+      this.scene = canvas(VIEW.w, VIEW_H);
+      this.sctx = this.scene.getContext('2d');
+      this.small = canvas(SMALL_W, SMALL_H);
+      this.smctx = this.small.getContext('2d');
+      this.frost = canvas(FW, FH);
+      this.fctx = this.frost.getContext('2d');
+      this.mask = canvas(FW, FH);
+      this.mctx = this.mask.getContext('2d');
+      // Writing gets its own mask so it stays sharp while melt edges are feathered.
+      this.textMask = canvas(FW, FH);
+      this.tctx = this.textMask.getContext('2d');
+      this.growth = null;
+    }
+    this.scale = Math.min(this.canvas.width / VIEW.w, this.canvas.height / VIEW_H);
+    this.ox = (this.canvas.width - VIEW.w * this.scale) / 2;
     this.oy = (this.canvas.height - VIEW_H * this.scale) / 2;
+  }
+
+  // Screen pixels (as the mouse reports them) to view coordinates.
+  toView(clientX, clientY) {
+    const dpr = this.canvas.width / Math.max(1, innerWidth);
+    return { x: (clientX * dpr - this.ox) / this.scale, y: (clientY * dpr - this.oy) / this.scale };
+  }
+
+  // The full-screen button sits in the top-right corner of the view.
+  fullscreenRect() {
+    return { x: VIEW.w - 50, y: 16, w: 30, h: 30 };
+  }
+
+  fullscreenHit(clientX, clientY) {
+    const p = this.toView(clientX, clientY);
+    const r = this.fullscreenRect();
+    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+  }
+
+  // Drawn on top of every screen: four corner marks, pointing out (go full screen) or in (leave it).
+  drawFullscreenButton(pointer) {
+    const c = this.ctx;
+    const r = this.fullscreenRect();
+    const hover = pointer && this.fullscreenHit(pointer.x, pointer.y);
+    this.canvas.style.cursor = hover ? 'pointer' : 'default';
+    const full = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    c.strokeStyle = `rgba(225,236,244,${hover ? 0.9 : 0.4})`;
+    c.lineWidth = 2;
+    c.lineCap = 'round';
+    const k = 7;
+    const x0 = r.x + 6, y0 = r.y + 6, x1 = r.x + r.w - 6, y1 = r.y + r.h - 6;
+    const corners = [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]];
+    c.beginPath();
+    for (const [x, y, dx, dy] of corners) {
+      if (full) {
+        // Pointing inward: the corner sits k in from its spot.
+        c.moveTo(x + dx * k, y);
+        c.lineTo(x + dx * k, y + dy * k);
+        c.lineTo(x, y + dy * k);
+      } else {
+        c.moveTo(x, y + dy * k);
+        c.lineTo(x, y);
+        c.lineTo(x + dx * k, y);
+      }
+    }
+    c.stroke();
+    c.lineCap = 'butt';
   }
 
   // Window frost: uneven thickness, fine speckle, and clusters of feathery fronds. Tiles seamlessly left to right.
@@ -296,7 +354,7 @@ export class Renderer {
     c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
     c.save();
     c.beginPath();
-    c.rect(0, 0, VIEW_W, VIEW_H);
+    c.rect(0, 0, VIEW.w, VIEW_H);
     c.clip();
 
     if (look.blur > 0.05 || look.sat < 0.99) {
@@ -305,7 +363,7 @@ export class Renderer {
     c.drawImage(this.scene, 0, 0);
     c.filter = 'none';
     c.globalAlpha = look.frostA;
-    c.drawImage(this.frost, 0, 0, VIEW_W, VIEW_H);
+    c.drawImage(this.frost, 0, 0, VIEW.w, VIEW_H);
     c.globalAlpha = 1;
 
     c.save();
@@ -317,22 +375,22 @@ export class Renderer {
     // Film grain keeps the picture from looking too clean and digital.
     c.globalAlpha = 0.06;
     c.fillStyle = this.grainPatterns[Math.floor(this.frame / 2) % 3];
-    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
     c.globalAlpha = 1;
 
     if (w < THRESHOLDS.heavy && game.mode !== 'title') {
       c.fillStyle = `rgba(2,4,8,${((THRESHOLDS.heavy - w) / THRESHOLDS.heavy) * 0.45})`;
-      c.fillRect(0, 0, VIEW_W, VIEW_H);
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     const lo = game.lightsOutAlpha();
     if (lo > 0) {
       c.fillStyle = `rgba(0,0,0,${lo})`;
-      c.fillRect(0, 0, VIEW_W, VIEW_H);
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     // Out of black as the first stage begins.
     if (game.intro && game.intro.t < 1.6) {
       c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
-      c.fillRect(0, 0, VIEW_W, VIEW_H);
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (!(game.intro && game.intro.t < INTRO_LOCK)) this.drawBar(c, game);
     if (game.intro && game.titleFade > 0) this.drawTitleText(c, game);
@@ -373,9 +431,9 @@ export class Renderer {
     g.addColorStop(0, C.skyTop);
     g.addColorStop(1, C.skyBottom);
     s.fillStyle = g;
-    s.fillRect(0, 0, VIEW_W, VIEW_H);
+    s.fillRect(0, 0, VIEW.w, VIEW_H);
     for (const st of this.stars) {
-      const x = (((st.x - cam * 0.04) % VIEW_W) + VIEW_W) % VIEW_W;
+      const x = (((st.x - cam * 0.04) % VIEW.w) + VIEW.w) % VIEW.w;
       const a = st.a * (0.6 + 0.4 * Math.sin(t * st.tw + st.x));
       s.fillStyle = `rgba(215,232,245,${a})`;
       s.fillRect(x, st.y, st.s, st.s);
@@ -391,15 +449,15 @@ export class Renderer {
       s.fillStyle = C.ridges[i];
       s.beginPath();
       s.moveTo(0, VIEW_H);
-      for (let x = 0; x <= VIEW_W + 12; x += 12) s.lineTo(x, fn(x + off));
-      s.lineTo(VIEW_W, VIEW_H);
+      for (let x = 0; x <= VIEW.w + 12; x += 12) s.lineTo(x, fn(x + off));
+      s.lineTo(VIEW.w, VIEW_H);
       s.closePath();
       s.fill();
       // Forest patches along the crest: small pines, smaller and hazier with distance.
       s.fillStyle = C.forests[i];
       const step = 3 + i * 1.5;
       const start = Math.floor(off / step) * step;
-      for (let wx = start; wx < off + VIEW_W + step; wx += step) {
+      for (let wx = start; wx < off + VIEW.w + step; wx += step) {
         const k = Math.floor(wx / step);
         const patch = Math.sin(k * 0.05 + i * 3) + Math.sin(k * 0.013 + i) * 0.8;
         if (patch < 0.25) continue;
@@ -416,11 +474,11 @@ export class Renderer {
       }
       // The body of the forest below the tree tops.
       s.beginPath();
-      for (let x = 0; x <= VIEW_W + 12; x += 12) {
+      for (let x = 0; x <= VIEW.w + 12; x += 12) {
         if (x === 0) s.moveTo(x, fn(x + off) + 2 + i);
         else s.lineTo(x, fn(x + off) + 2 + i);
       }
-      for (let x = VIEW_W + 12; x >= 0; x -= 12) {
+      for (let x = VIEW.w + 12; x >= 0; x -= 12) {
         const k = Math.floor((x + off) / step);
         const patch = Math.sin(k * 0.05 + i * 3) + Math.sin(k * 0.013 + i) * 0.8;
         const depth = patch < 0.25 ? 0 : Math.min(1, (patch - 0.25) * 2) * treeH * 0.6;
@@ -434,7 +492,7 @@ export class Renderer {
   // Snow is the brightest thing in a snow scene, so the ground is pale and the figures read dark against it.
   drawGround(s, cam) {
     const x0 = cam - 40;
-    const x1 = cam + VIEW_W + 40;
+    const x1 = cam + VIEW.w + 40;
     const top = () => {
       s.beginPath();
       for (let x = x0; x <= x1; x += 10) {
@@ -809,7 +867,7 @@ export class Renderer {
       f.y += f.vy * dt;
       f.x += (f.vx + Math.sin(t + f.ph) * 8) * dt;
       if (f.y > VIEW_H) f.y -= VIEW_H;
-      const x = (((f.x - cam * f.par) % VIEW_W) + VIEW_W) % VIEW_W;
+      const x = (((f.x - cam * f.par) % VIEW.w) + VIEW.w) % VIEW.w;
       s.fillStyle = `rgba(225,238,248,${0.22 * f.s})`;
       s.fillRect(x, f.y, f.s, f.s);
     }
@@ -819,7 +877,7 @@ export class Renderer {
     s.strokeStyle = '#151f26';
     for (const n of this.near) {
       const x = n.x - cam * 1.35;
-      if (x < -300 || x > VIEW_W + 300) continue;
+      if (x < -300 || x > VIEW.w + 300) continue;
       if (n.kind === 'drift') {
         s.fillStyle = C.near;
         s.beginPath();
@@ -979,13 +1037,13 @@ export class Renderer {
     if (game.intro && game.titleFade > 0) {
       tm.globalAlpha = game.titleFade;
       tm.font = `190px ${HAND}`;
-      this.writeReveal(tm, 'thaw', VIEW_W / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
+      this.writeReveal(tm, 'thaw', VIEW.w / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
     }
     if (game.mode === 'stageEnd') {
       const T = game.stageEndT;
       tm.globalAlpha = 1;
       tm.font = `64px ${HAND}`;
-      this.writeReveal(tm, game.level.closingLine.toLowerCase(), VIEW_W / 2, 190, clamp01((T - 3.2) / 2.6));
+      this.writeReveal(tm, game.level.closingLine.toLowerCase(), VIEW.w / 2, 190, clamp01((T - 3.2) / 2.6));
     }
     m.globalAlpha = 1;
   }
@@ -1018,14 +1076,14 @@ export class Renderer {
     f.clearRect(0, 0, FW, FH);
     f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
     f.imageSmoothingQuality = 'high';
-    f.drawImage(this.small, 0, 0, VIEW_W, VIEW_H);
+    f.drawImage(this.small, 0, 0, VIEW.w, VIEW_H);
     f.fillStyle = `rgba(178,202,214,${look.tintA})`;
-    f.fillRect(0, 0, VIEW_W, VIEW_H);
+    f.fillRect(0, 0, VIEW.w, VIEW_H);
 
     // Crystals are fixed to the world, so they scroll with it.
     f.globalAlpha = look.crystalA;
     const off = -(((cam % TILE_W) + TILE_W) % TILE_W);
-    for (let x = off; x < VIEW_W; x += TILE_W) f.drawImage(this.crystals, x, 0);
+    for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
     f.globalAlpha = 1;
 
     f.save();
@@ -1178,13 +1236,13 @@ export class Renderer {
     c.textAlign = 'center';
     c.font = `italic 300 21px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 4.2) / 1)})`;
-    c.fillText('a small warmth in a frozen world', VIEW_W / 2, 270);
+    c.fillText('a small warmth in a frozen world', VIEW.w / 2, 270);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * a * clamp01((t - 5) / 1)})`;
-    c.fillText('walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M', VIEW_W / 2, VIEW_H - 40);
+    c.fillText('walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M   ·   full screen: F', VIEW.w / 2, VIEW_H - 40);
     c.font = `italic 300 13px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.6 * a * clamp01((t - 5) / 1)})`;
-    c.fillText('music: thatgamejam #02 theme by Jason Grace', VIEW_W / 2, VIEW_H - 62);
+    c.fillText('music: thatgamejam #02 theme by Jason Grace', VIEW.w / 2, VIEW_H - 62);
   }
 
   // A cleared-area mask for frost growing in from the edges. Each pixel freezes once fr passes its threshold:
@@ -1233,10 +1291,10 @@ export class Renderer {
     c.textAlign = 'center';
     c.font = `300 17px ${SERIF}`;
     c.fillStyle = `rgba(214,226,234,${clamp01(t / 1.5) * (0.55 + 0.35 * Math.sin(t * 2))})`;
-    c.fillText('press any key to begin', VIEW_W / 2, VIEW_H / 2);
+    c.fillText('press any key to begin', VIEW.w / 2, VIEW_H / 2);
     c.font = `italic 300 14px ${SERIF}`;
     c.fillStyle = `rgba(160,178,190,${0.6 * clamp01((t - 0.8) / 1.5)})`;
-    c.fillText('best with sound on', VIEW_W / 2, VIEW_H / 2 + 34);
+    c.fillText('best with sound on   ·   F for full screen', VIEW.w / 2, VIEW_H / 2 + 34);
   }
 
   // The prologue: the world before the cold, then the cold, drawn with the same pieces as the game.
@@ -1261,14 +1319,14 @@ export class Renderer {
     sky.addColorStop(0, mix('#1c2a31', C.skyTop, cold));
     sky.addColorStop(1, mix('#d9a265', C.skyBottom, cold));
     s.fillStyle = sky;
-    s.fillRect(0, 0, VIEW_W, VIEW_H);
+    s.fillRect(0, 0, VIEW.w, VIEW_H);
     glow(s, 300 - cam * 0.15, 455, 440, '255,196,120', 0.42 * (1 - cold));
     const ridge = (par, color, fn) => {
       s.fillStyle = color;
       s.beginPath();
       s.moveTo(0, VIEW_H);
-      for (let x = 0; x <= VIEW_W + 12; x += 12) s.lineTo(x, fn(x + cam * par));
-      s.lineTo(VIEW_W, VIEW_H);
+      for (let x = 0; x <= VIEW.w + 12; x += 12) s.lineTo(x, fn(x + cam * par));
+      s.lineTo(VIEW.w, VIEW_H);
       s.closePath();
       s.fill();
     };
@@ -1278,7 +1336,7 @@ export class Renderer {
     s.save();
     s.translate(-cam, 0);
     // Golden grass that the snow covers.
-    const x0 = cam - 40, x1 = cam + VIEW_W + 40;
+    const x0 = cam - 40, x1 = cam + VIEW.w + 40;
     s.beginPath();
     s.moveTo(x0, VIEW_H);
     for (let x = x0; x <= x1; x += 10) s.lineTo(x, groundY(x));
@@ -1395,7 +1453,7 @@ export class Renderer {
       f.x += (f.vx - 220 * P.wind()) * dt;
       if (f.y > VIEW_H) f.y -= VIEW_H;
       if (i >= count) continue;
-      const x = (((f.x - cam * f.par) % VIEW_W) + VIEW_W) % VIEW_W;
+      const x = (((f.x - cam * f.par) % VIEW.w) + VIEW.w) % VIEW.w;
       s.fillStyle = `rgba(225,238,248,${0.22 * f.s})`;
       s.fillRect(x, f.y, f.s, f.s);
     }
@@ -1413,12 +1471,12 @@ export class Renderer {
       f.globalCompositeOperation = 'source-over';
       f.clearRect(0, 0, FW, FH);
       f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
-      f.drawImage(this.small, 0, 0, VIEW_W, VIEW_H);
+      f.drawImage(this.small, 0, 0, VIEW.w, VIEW_H);
       f.fillStyle = 'rgba(178,202,214,0.42)';
-      f.fillRect(0, 0, VIEW_W, VIEW_H);
+      f.fillRect(0, 0, VIEW.w, VIEW_H);
       f.globalAlpha = 0.85;
       const off = -(((cam % TILE_W) + TILE_W) % TILE_W);
-      for (let x = off; x < VIEW_W; x += TILE_W) f.drawImage(this.crystals, x, 0);
+      for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
       f.globalAlpha = 1;
 
       const m = this.mctx;
@@ -1441,7 +1499,7 @@ export class Renderer {
         const { p, a } = P.line(l);
         if (p <= 0 || a <= 0) continue;
         m.globalAlpha = a;
-        this.writeReveal(m, l.text, VIEW_W / 2, 190, p);
+        this.writeReveal(m, l.text, VIEW.w / 2, 190, p);
       }
       m.globalAlpha = 1;
       f.setTransform(1, 0, 0, 1, 0, 0);
@@ -1457,7 +1515,7 @@ export class Renderer {
     c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
     c.save();
     c.beginPath();
-    c.rect(0, 0, VIEW_W, VIEW_H);
+    c.rect(0, 0, VIEW.w, VIEW_H);
     c.clip();
     // The world zooms toward the last coal; the frost on the glass does not.
     const z = P.zoom();
@@ -1471,7 +1529,7 @@ export class Renderer {
     c.restore();
     if (fr > 0) {
       c.globalAlpha = 0.95;
-      c.drawImage(this.frost, 0, 0, VIEW_W, VIEW_H);
+      c.drawImage(this.frost, 0, 0, VIEW.w, VIEW_H);
       c.globalAlpha = 1;
     }
     const d = P.dark();
@@ -1480,7 +1538,7 @@ export class Renderer {
       dg.addColorStop(0, `rgba(0,0,0,${d * 0.35})`);
       dg.addColorStop(1, `rgba(0,0,0,${d})`);
       c.fillStyle = dg;
-      c.fillRect(0, 0, VIEW_W, VIEW_H);
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     // The last coal shows as warm light through the frost, not as a hole in it.
     if (fr > 0.3) {
@@ -1499,22 +1557,22 @@ export class Renderer {
       c.font = `54px ${HAND}`;
       c.textAlign = 'center';
       c.fillStyle = `rgba(255,226,178,${0.92 * l0.a})`;
-      this.writeReveal(c, first.text, VIEW_W / 2, 170, l0.p);
+      this.writeReveal(c, first.text, VIEW.w / 2, 170, l0.p);
     }
     c.globalAlpha = 0.06;
     c.fillStyle = this.grainPatterns[Math.floor(this.frame / 2) % 3];
-    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
     c.globalAlpha = 1;
     const b = P.black();
     if (b > 0) {
       c.fillStyle = `rgba(0,0,0,${b})`;
-      c.fillRect(0, 0, VIEW_W, VIEW_H);
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (t > 3 && t < 55) {
       c.font = `300 13px ${SERIF}`;
       c.textAlign = 'right';
       c.fillStyle = `rgba(200,212,222,${0.35 * clamp01((t - 3) / 2)})`;
-      c.fillText('esc to skip', VIEW_W - 28, VIEW_H - 24);
+      c.fillText('esc to skip', VIEW.w - 28, VIEW_H - 24);
     }
     c.restore();
   }
@@ -1585,19 +1643,19 @@ export class Renderer {
 
   drawPause(c) {
     c.fillStyle = 'rgba(200,222,235,0.6)';
-    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
     c.textAlign = 'center';
     c.fillStyle = '#17303b';
     c.font = `70px ${HAND}`;
-    c.fillText('paused', VIEW_W / 2, VIEW_H / 2 - 70);
+    c.fillText('paused', VIEW.w / 2, VIEW_H / 2 - 70);
     c.font = `300 18px ${SERIF}`;
     const lines = [
       'move: arrows, WASD or left stick',
       'pulse: hold space or A',
-      'mute: M   ·   restart: R',
+      'mute: M   ·   restart: R   ·   full screen: F',
       'esc or start to resume',
     ];
-    lines.forEach((l, i) => c.fillText(l, VIEW_W / 2, VIEW_H / 2 - 10 + i * 32));
+    lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32));
   }
 
   drawStageEndText(c, game) {
@@ -1606,17 +1664,17 @@ export class Renderer {
     c.textAlign = 'center';
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.8 * a})`;
-    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW_W / 2, 112);
+    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW.w / 2, 112);
     const b = clamp01((T - 5.8) / 1);
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;
-    c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW_W / 2, 250);
+    c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW.w / 2, 250);
     // What was chosen at each fork in this stage.
     const forks = game.level.forks || {};
     const said = Object.keys(game.choices).map((k) => forks[k] && forks[k][game.choices[k]]).filter(Boolean);
-    if (said.length) c.fillText(said.join('  '), VIEW_W / 2, 280);
+    if (said.length) c.fillText(said.join('  '), VIEW.w / 2, 280);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to restart', VIEW_W / 2, 320);
+    c.fillText('space to keep wandering   ·   R to restart', VIEW.w / 2, 320);
   }
 }

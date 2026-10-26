@@ -1,5 +1,9 @@
 // Logical view size. The canvas scales this to fit the window.
-export const VIEW_W = 1280;
+// The view is always 720 high. Its width follows the screen's shape: 16:10 at least, up to 21:9 for wide screens,
+// so the game fills the screen instead of sitting between black bars. It is an object so every module sees resizes.
+export const VIEW = { w: 1280 };
+export const VIEW_MIN_W = 1152;
+export const VIEW_MAX_W = 1720;
 export const VIEW_H = 720;
 
 // 60 BPM at normal warmth. The heart slows below the blur threshold.

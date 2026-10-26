@@ -9,6 +9,7 @@ A slow, atmospheric survival game for thatgamejam #02. A child carries her villa
 - Pause: Esc, P or Start
 - Mute: M
 - Restart: R
+- Full screen: F, or the button in the top-right corner
 
 ## Prologue: "The last coal"
 

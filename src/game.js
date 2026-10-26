@@ -1,5 +1,5 @@
 import {
-  VIEW_W, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
+  VIEW, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
 } from './config.js';
 import { groundY, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
@@ -233,7 +233,7 @@ export class Game {
     this.updateFire();
     this.updateLightsOut(dt);
 
-    const camTarget = clamp(e.x - VIEW_W * 0.42, 0, L.width - VIEW_W);
+    const camTarget = clamp(e.x - VIEW.w * 0.42, 0, L.width - VIEW.w);
     this.camX += (camTarget - this.camX) * Math.min(1, dt * 3);
 
     this.updateAudio();
@@ -496,7 +496,7 @@ export class Game {
         c.x = e.x - 44 * (i + 1);
         c.y = groundY(c.x) - CHEST * COMPANION_SCALE;
       });
-      this.camX = clamp(e.x - VIEW_W * 0.42, 0, this.level.width - VIEW_W);
+      this.camX = clamp(e.x - VIEW.w * 0.42, 0, this.level.width - VIEW.w);
       this.flashed.clear();
       this.pickups = [];
     }

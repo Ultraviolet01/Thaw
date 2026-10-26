@@ -25,9 +25,32 @@ function frame(now) {
   input.poll();
   game.update(dt, input);
   renderer.draw(game, dt);
+  renderer.drawFullscreenButton(pointer);
   input.endFrame();
   requestAnimationFrame(frame);
 }
+
+// Full screen: the corner button or F. Browsers only allow it straight from a click or key press,
+// so it is handled here in the event, not in the frame loop.
+let pointer = null;
+function toggleFullscreen() {
+  const d = document;
+  const el = d.documentElement;
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  const exit = d.exitFullscreen || d.webkitExitFullscreen;
+  const p = d.fullscreenElement || d.webkitFullscreenElement ? exit && exit.call(d) : request && request.call(el);
+  if (p && p.catch) p.catch(() => {});
+}
+addEventListener('keydown', (e) => {
+  if (e.code === 'KeyF' && !e.repeat) toggleFullscreen();
+});
+canvas.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerdown', (e) => {
+  if (!renderer.fullscreenHit(e.clientX, e.clientY)) return;
+  toggleFullscreen();
+  // A click on the button is not "press any key": keep it from starting the game.
+  e.stopPropagation();
+});
 
 canvas.focus();
 requestAnimationFrame(frame);
