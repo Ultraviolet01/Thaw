@@ -30,6 +30,9 @@ const VILLAGERS = [
   { coat: '#3d4636', fold: '#56604c', scarf: '#8c3f2f', stripe: '#ead8bf', mitten: '#8c3f2f', fur: '#ddd3c1' },
 ];
 
+// The colour of the snow surface, used where feet sink into it.
+const SNOW_GROUND = '#8ea5b1';
+
 const SMALL_W = 320;
 const SMALL_H = 180;
 const TILE_W = 1024;
@@ -666,7 +669,7 @@ export class Renderer {
   drawWanderer(s, o, warm, t) {
     const fig = this.figures[o.id];
     // Their fire went out with everyone else's: no pot, arms wrapped round themselves.
-    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t });
+    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t, ground: SNOW_GROUND });
   }
 
   drawFire(s, f, t) {
@@ -776,7 +779,7 @@ export class Renderer {
       // The fire passes from her pot to theirs as they join: a few sparks, then their own coal glows.
       const since = t - (c.joinedAt ?? -99);
       const lit = clamp01((since - 0.7) / 0.5);
-      this.figures[c.objId].draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0 });
+      this.figures[c.objId].draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0, ground: SNOW_GROUND });
       if (since < 1.3) this.drawSparkTrail(s, this.player.chest(), this.figures[c.objId].chest(), since / 1.3);
     }
     this.player.update(dt, e.x, e.facing, wind, t);
@@ -794,11 +797,11 @@ export class Renderer {
       s.closePath();
       s.clip();
       s.translate(0, (1 - k) * 100);
-      this.player.draw(s, { glow, t, dt, pulsing: false, beat: 0 });
+      this.player.draw(s, { glow, t, dt, pulsing: false, beat: 0, ground: SNOW_GROUND });
       s.restore();
       return;
     }
-    this.player.draw(s, { glow, t, dt, pulsing: game.pulsing, beat: game.beatEnvelope() });
+    this.player.draw(s, { glow, t, dt, pulsing: game.pulsing, beat: game.beatEnvelope(), ground: SNOW_GROUND });
   }
 
   drawSnow(s, cam, dt, t) {
@@ -1345,21 +1348,22 @@ export class Renderer {
     }
 
     // Villagers taking coals home, those who stay by the fire, and the child setting off.
+    const groundTone = mix('#b08c4d', '#90a7b3', cold);
     WALKERS.forEach((w, i) => {
       const st = P.walker(w);
       if (st.inside) return;
       const fig = figs.walkers[i];
       fig.update(dt, st.x, t < w.start ? -1 : st.facing, wind, t);
-      fig.draw(s, { glow: 1, t, dt, pot: true });
+      fig.draw(s, { glow: 1, t, dt, pot: true, ground: groundTone });
     });
     STAYERS.forEach((p, i) => {
       const fig = figs.stayers[i];
       fig.update(dt, p.x, p.facing, wind, t);
-      fig.draw(s, { frozen: P.stayerFrozen(p), glow: P.stayerGlow(p), t, dt, pot: true });
+      fig.draw(s, { frozen: P.stayerFrozen(p), glow: P.stayerGlow(p), t, dt, pot: true, ground: groundTone });
     });
     const cx = childX(t);
     figs.child.update(dt, cx, 1, wind, t);
-    figs.child.draw(s, { frozen: P.childFrozen(), glow: P.childGlow(), t, dt, pot: true });
+    figs.child.draw(s, { frozen: P.childFrozen(), glow: P.childGlow(), t, dt, pot: true, ground: groundTone });
 
     s.save();
     s.globalCompositeOperation = 'lighter';

@@ -153,13 +153,26 @@ export class Character {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Boots and short legs below the coat.
+    // A soft shadow where the figure meets the ground, so it stands on it rather than above it.
+    if (fz < 0.95) {
+      const sh = ctx.createRadialGradient(x, g + 1, 0, x, g + 1, 13 * s);
+      sh.addColorStop(0, `rgba(10,14,18,${0.32 * (1 - fz)})`);
+      sh.addColorStop(1, 'rgba(10,14,18,0)');
+      ctx.fillStyle = sh;
+      ctx.beginPath();
+      ctx.ellipse(x, g + 1, 13 * s, 3.2 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Boots and short legs below the coat. Each foot stands on the ground right under it, so feet
+    // stay planted on slopes too.
     const hipY = g - 18 * s - a.b;
+    const feet = [];
     for (const off of [0, Math.PI]) {
       const sw = Math.sin(this.phase + off) * walk;
       const lift = Math.max(0, Math.cos(this.phase + off)) * walk * 3 * s;
       const fx = x + sw * 6 * s;
-      const fy = g - lift;
+      const fy = this.floor(fx) - lift;
       ctx.strokeStyle = tint(this.c.coat);
       ctx.lineWidth = 3.4 * s;
       ctx.beginPath();
@@ -168,8 +181,19 @@ export class Character {
       ctx.stroke();
       ctx.fillStyle = tint(this.c.boots);
       ctx.beginPath();
-      ctx.ellipse(fx + f * 1.2 * s, fy - 1.6 * s, 3 * s, 2.2 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(fx + f * 1.2 * s, fy - 1.3 * s, 3.2 * s, 2.3 * s, 0, 0, Math.PI * 2);
       ctx.fill();
+      feet.push({ x: fx + f * 1.2 * s, y: fy, down: lift < 0.5 });
+    }
+    // Boots sink a little into the snow or grass: a lip of the ground drawn over their soles.
+    if (o.ground) {
+      ctx.fillStyle = o.ground;
+      for (const ft of feet) {
+        if (!ft.down) continue;
+        ctx.beginPath();
+        ctx.ellipse(ft.x, ft.y + 0.6 * s, 4.2 * s, 1.3 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // The padded coat.
