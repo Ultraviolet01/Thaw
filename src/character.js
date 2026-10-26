@@ -42,6 +42,7 @@ export class Character {
     this.x = x;
     this.facing = facing;
     this.phase = 0;
+    this.footfalls = 0;
     this.speed = 0;
     this.lift = 0;
     this.c = {
@@ -92,7 +93,10 @@ export class Character {
     this.speed = Math.abs(moved) / dt;
     this.x = x;
     if (facing) this.facing = facing;
+    // A boot lands each time a foot's lift returns to zero, which is twice per stride.
+    const landed = Math.floor(this.phase / Math.PI - 0.5);
     this.phase += (Math.abs(moved) * 0.13) / this.s;
+    if (Math.floor(this.phase / Math.PI - 0.5) > landed) this.footfalls++;
     const a = this.anchors();
     const f = this.facing;
     this.step(this.back, a.back, dt, wind, t, 0.7, true, -f * 6 * this.s);

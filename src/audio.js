@@ -12,6 +12,10 @@ const WIND_SRC = 'audio/sfx/wind-window.mp3';
 const STORM_SRC = 'audio/sfx/wind-storm.mp3';
 // Short cracks cut from one long recording of cracking ice.
 const CRACK_SRC = [1, 2, 3, 4, 5, 6].map((i) => `audio/sfx/ice-crack-${i}.mp3`);
+// Boots in snow: two crunches cut from one recorded step.
+const STEP_SRC = ['audio/sfx/snow-step-1.mp3', 'audio/sfx/snow-step-2.mp3'];
+// The fire at the end of each stage.
+const FIRE_SRC = 'audio/sfx/fire.mp3';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -84,6 +88,7 @@ export class GameAudio {
     this.hums = new Map();
     this.wind = new FileLoop(WIND_SRC);
     this.storm = new FileLoop(STORM_SRC);
+    this.fire = new FileLoop(FIRE_SRC);
   }
 
   // Must run from a user gesture so the browser allows playback.
@@ -303,6 +308,21 @@ export class GameAudio {
     this.noiseBurst(t, 0.6, 900, 0.03, 'lowpass');
   }
 
+  // The fire crackles louder as she nears it: 0 = out of earshot, 1 = beside it.
+  setFire(amount) {
+    this.fire.set(0.85 * clamp01(amount));
+  }
+
+  // One boot landing in the snow. Each step varies a little in pitch and weight.
+  footstep() {
+    if (this.muted) return;
+    const el = new Audio(STEP_SRC[Math.floor(Math.random() * STEP_SRC.length)]);
+    el.preservesPitch = false;
+    el.playbackRate = 0.9 + Math.random() * 0.2;
+    el.volume = 0.22 + Math.random() * 0.12;
+    el.play().catch(() => {});
+  }
+
   crack() {
     if (this.muted) return;
     const el = new Audio(CRACK_SRC[Math.floor(Math.random() * CRACK_SRC.length)]);
@@ -422,6 +442,7 @@ export class GameAudio {
     if (this.theme) this.theme.muted = this.muted;
     this.wind.setMuted(this.muted);
     this.storm.setMuted(this.muted);
+    this.fire.setMuted(this.muted);
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_LEVEL, this.ctx.currentTime, 0.05);
   }
 }

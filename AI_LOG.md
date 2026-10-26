@@ -17,7 +17,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 ## Not AI-generated so far
 
 - No art files: all visuals are drawn in code
-- Wind and ice-cracking sounds are human-made CC0 recordings from Freesound, credited in audio/CREDITS.md. They were only trimmed and leveled, and the cracks were cut into short clips
+- Wind, ice cracking, footsteps and the fire are human-made CC0 recordings from Freesound, credited in audio/CREDITS.md. They were only trimmed and leveled, and the cracks were cut into short clips
 - The other sounds (music layers, heartbeat, pulse, melt, chimes, hums) are still synthesized by AI-written code, and are being replaced with human-made recordings
 - Fonts are existing Google Fonts (Reenie Beanie, Spectral), not generated
 - Theme music is the jam's official track by Jason Grace, used unmodified, not generated

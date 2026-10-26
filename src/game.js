@@ -322,6 +322,7 @@ export class Game {
     }
 
     const fd = Math.abs(e.x - this.fire.x);
+    this.audio.setFire(1 - fd / 1100);
     if (fd < WARMTH.fireRadius) {
       delta += WARMTH.fireHealPerSecond * (1 - fd / WARMTH.fireRadius);
       nearHeat = true;

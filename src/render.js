@@ -842,7 +842,9 @@ export class Renderer {
       this.figures[c.objId].draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0, ground: SNOW_GROUND });
       if (since < 1.3) this.drawSparkTrail(s, this.player.chest(), this.figures[c.objId].chest(), since / 1.3);
     }
+    const steps = this.player.footfalls;
     this.player.update(dt, e.x, e.facing, wind, t);
+    if (this.player.footfalls > steps) game.audio.footstep();
     let glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
     const it = game.intro;
     if (it && it.t < INTRO_LOCK) {
