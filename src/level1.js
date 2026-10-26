@@ -14,10 +14,10 @@ export const level1 = {
   mist: [{ x0: 1750, x1: 2450 }],
   fire: { x: 4050 },
   hints: [
-    { x: 300, text: 'Arrows or WASD to drift', until: 'moved' },
-    { x: 650, text: 'Hold Space to pulse your warmth', until: 'pulsed' },
-    { x: 1300, text: 'Every pulse costs warmth. Choose what to thaw.' },
-    { x: 2750, text: 'Something is frozen here.' },
+    { x: 300, text: 'arrows to drift', until: 'moved' },
+    { x: 650, text: 'hold space to pulse', until: 'pulsed' },
+    { x: 1300, text: 'every pulse costs warmth' },
+    { x: 2750, text: 'someone is frozen here' },
   ],
   closingLine: 'Somewhere ahead, something is still warm.',
 };

@@ -82,7 +82,7 @@ export class Game {
     }
     if (this.mode === 'stageEnd') {
       this.stageEndT += dt;
-      if (this.stageEndT > 4 && input.pulsePressed) {
+      if (this.stageEndT > 6 && input.pulsePressed) {
         this.mode = 'play';
         this.freeRoam = true;
         this.holdLock = true;
@@ -284,6 +284,7 @@ export class Game {
   }
 
   onThawed(o) {
+    o.thawedAt = this.time;
     this.audio.unlockLayer();
     this.audio.chime();
     this.audio.setHum(o.id, 0, 0);

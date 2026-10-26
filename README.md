@@ -16,6 +16,18 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Mute: M
 - Restart: R
 
+## Art direction: frosted glass
+
+- The whole world sits behind frost, like a window in winter
+- The ember's warmth melts a clear patch around it; the patch shrinks as warmth drops
+- Thawed things leave permanent clear patches, with meltwater running down from them
+- Each pulse sweeps a ring of clarity through the frost, which closes back over
+- Hints, the title and closing lines are written into the frost, like a finger on a cold window
+- Frozen things show only as blurred shapes and faint glints through the frost
+- Depth: four background ridges, the play layer, and dark drifts and branches in the foreground
+- Film grain on top so the picture never looks too clean
+- Fonts: Reenie Beanie (handwriting) and Spectral (small text), both from Google Fonts under the Open Font License
+
 ## What is in this build (Stage 1, The Still)
 
 - Warmth as HP, shown by the warmth bar (top left) and by the ember's glow
@@ -34,7 +46,7 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 
 - `src/main.js`: boot and frame loop
 - `src/game.js`: game state, warmth, pulse, thawing, companions, lights out
-- `src/render.js`: Canvas drawing, warmth effects, warmth bar, screens
+- `src/render.js`: Canvas drawing, the frost layer and melt mask, warmth effects, warmth bar, screens
 - `src/audio.js`: synthesized audio (heartbeat, wind, hums, music layers)
 - `src/input.js`: keyboard and gamepad
 - `src/level1.js`: Stage 1 layout

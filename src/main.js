@@ -12,7 +12,8 @@ const renderer = new Renderer(canvas, level1);
 
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // Capped so a long stall (a hidden tab) cannot jump the simulation, but loose enough that slow frames keep real time.
+  const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   input.poll();
   game.update(dt, input);
