@@ -4,7 +4,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 
 ## Disclosure for the game page
 
-> This game contains AI-generated content. The idea, story and game design are by Ultraviolet. The code, including everything drawn on screen, was written by an AI (Claude) from that design and direction, then tested and tuned by Ultraviolet. All music and sound are human-made: the jam theme by Jason Grace, plus CC0 music and recordings from OpenGameArt and Freesound (full credits in audio/CREDITS.md). No audio is AI-generated.
+> This game contains AI-generated content. The idea, story, game design and level layout are by Ultraviolet. The code, including everything drawn on screen, was written by an AI (Claude) from that design and direction, then tested and tuned by Ultraviolet. All music and sound are human-made: the jam theme by Jason Grace, plus CC0 music and recordings from OpenGameArt and Freesound (full credits in audio/CREDITS.md). No audio is AI-generated.
 
 ## Log
 
@@ -22,7 +22,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 
 ## Not AI-generated so far
 
-- The idea, story and game design are by Ultraviolet
+- The idea, story, game design and level layout are by Ultraviolet
 - Every sound effect (wind, ice cracking, footsteps, heartbeat, her breath on the coal, melting, refreezing, the ember, lights out, the hums and the chime, the fire) is a human-made CC0 recording from Freesound, credited in audio/CREDITS.md. They were only cut, leveled, faded and filtered
 - All music during play is human-made CC0 music from OpenGameArt (Long Winter by Indieteur, Esther by Kistol, November Snow by cynicmusic), credited in audio/CREDITS.md. It was only re-encoded and leveled. No sound in the game is synthesized or AI-generated
 - Fonts are existing Google Fonts (Reenie Beanie, Spectral), not generated
