@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Dependency order: each module comes after the ones it imports.
-ORDER = ['config', 'terrain', 'level1', 'prologue', 'input', 'audio', 'character', 'game', 'render', 'main']
+ORDER = ['config', 'terrain', 'level1', 'prologue', 'village', 'input', 'audio', 'character', 'game', 'render', 'main']
 # Files shipped next to index.html, byte for byte. The theme track must stay unmodified.
 ASSETS = ['audio/thatgamejam02_theme.wav']
 

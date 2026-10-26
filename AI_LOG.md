@@ -11,6 +11,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 | 2026-10-26 | Claude (Claude Code) | Stage 1 fork (lantern or wanderer, the cold takes the other), one frost hint at a time | Team's call to make choices visible in play, no menus; reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Prologue "The last fire": timeline, scene, frost growth, stage intro (rise from the snow) | Story lines and structure agreed with the team; reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Redesign away from Sky and Journey: village prologue "The last coal", bundled child with an ember pot, companions strengthen the pulse instead of recharging, rebalance | Direction set by the team after comparing against thatgamecompany's games; reviewed by the team |
+| 2026-10-26 | Claude (Claude Code) | Long-run consequences: choice record across stages, named villagers and homes, village row at stage end, carry-overs from forks, companions losing their fire | Design agreed with the team; reviewed by the team |
 | 2026-10-26 | Claude | Game design document drafting | Drafted from the team's direction and edited by the team |
 
 ## Not AI-generated so far

@@ -60,6 +60,11 @@ A slow, atmospheric survival game for thatgamejam #02. A child carries her villa
 - Frozen mist: drains warmth while inside
 - Wanderers: thaw one and they walk with you, their fire joining your pulse
 - Shimmer cue: faint motes drift toward the nearest frozen thing, matching its hum, so the game works with sound off
+- Choices that last: the game keeps a record of who you saved, who you lost and what you chose, carried from stage to stage
+  - Every villager has a name and a home in the prologue's village; the stage end shows the row of homes, lit for those saved, dark for those lost or left, faint for those not reached yet
+  - Each fork gives something for the next stage: the light gives a flame for the dark ahead; the weaver knows the way through the wind
+  - If your coal stays below 6% for 4 seconds, the last companion to join loses their fire and freezes where they stand ("the weaver's fire went out"); warming them again takes 8 pulses
+  - The ending (not built yet) returns to the village and lights the windows of everyone saved
 - Lucky embers: now and then a warm coal turns up in the snow ahead (better odds when cold). Walk over it for +15% warmth; it cools and fades after about 25 seconds
 - Fire at the end: full warmth, checkpoint, closing line
 
@@ -67,6 +72,7 @@ A slow, atmospheric survival game for thatgamejam #02. A child carries her villa
 
 - `src/main.js`: boot and frame loop
 - `src/prologue.js`: the prologue's timeline, village, people, flowers and lines
+- `src/village.js`: the villagers' homes and names, shown at each stage end
 - `src/game.js`: game state, warmth, pulse, thawing, companions, lights out
 - `src/render.js`: Canvas drawing, the frost layer and melt mask, warmth effects, warmth bar, screens
 - `src/audio.js`: synthesized audio (heartbeat, wind, hums, music layers)

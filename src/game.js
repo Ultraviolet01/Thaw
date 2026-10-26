@@ -4,6 +4,7 @@ import {
 import { groundY, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
 import { POT_HEIGHT } from './character.js';
+import { villagerName } from './village.js';
 
 // The player is a child; the villagers she finds are grown-ups.
 export const PLAYER_SCALE = 1.4;
@@ -29,10 +30,19 @@ export class Game {
     this.time = 0;
     this.titleFade = 1;
     this.reset();
+    this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
   }
 
   reset() {
     const L = this.level;
+    // What the player's choices have added up to, carried from stage to stage. Restarting a stage
+    // goes back to how things stood when the stage began.
+    this.ledger = this.ledgerAtStageStart
+      ? JSON.parse(JSON.stringify(this.ledgerAtStageStart))
+      : { saved: [], lost: [], forks: {}, carry: [] };
+    this.coldTimer = 0;
+    this.relapseNote = null;
+    this.stageRecorded = false;
     this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max };
     this.checkpoint = { ...L.spawn };
     this.objects = L.objects.map((o, i) => ({
@@ -280,11 +290,15 @@ export class Game {
     if (this.choices[chosen.fork]) return;
     this.choices[chosen.fork] = chosen.type;
     this.hintFlags.forkChosen = true;
+    this.ledger.forks[chosen.fork] = chosen.type;
+    const carry = this.level.carries && this.level.carries[chosen.fork] && this.level.carries[chosen.fork][chosen.type];
+    if (carry) this.ledger.carry.push(carry.id);
     for (const o of this.objects) {
       if (o === chosen || o.fork !== chosen.fork || o.state !== 'frozen') continue;
       o.state = 'lost';
       o.lostAt = this.time;
       this.hintFlags[o.type === 'lantern' ? 'lostLantern' : 'lostWanderer'] = true;
+      if (o.home) this.ledger.lost.push(o.home);
       this.audio.setHum(o.id, 0, 0);
       this.audio.refreeze();
     }
@@ -329,10 +343,62 @@ export class Game {
     }
     this.barFlash = Math.max(0, this.barFlash - dt);
 
+    // Let your coal nearly die and the last person who joined you loses their fire.
+    if (e.warmth < WARMTH.relapseBelow && this.companions.length > 0) {
+      this.coldTimer += dt;
+      if (this.coldTimer >= WARMTH.relapseAfter) {
+        this.coldTimer = 0;
+        this.relapse();
+      }
+    } else {
+      this.coldTimer = 0;
+    }
+
     if (e.warmth <= 0) {
       this.lightsOut = { t: 0, respawned: false };
       this.pulsing = false;
       this.audio.lightsOut();
+    }
+  }
+
+  // A companion whose fire has gone out freezes again where they stand. They can be warmed again,
+  // but it takes more than the first time.
+  relapse() {
+    const c = this.companions.pop();
+    const o = {
+      type: 'wanderer',
+      x: c.x,
+      pulses: WARMTH.relapsePulses,
+      home: c.home,
+      figId: c.objId,
+      relapsed: true,
+    };
+    this.objects.push({
+      ...o,
+      id: this.objects.length,
+      progress: 0,
+      state: 'frozen',
+      meltT: 0,
+      spread: 0,
+      hit: 0,
+      gone: false,
+      seed: this.objects.length * 97 + 13,
+      bounds: objectBounds(o),
+    });
+    this.relapseNote = { x: c.x, text: `${villagerName(c.home)}'s fire went out`, t: this.time };
+    this.audio.refreeze();
+  }
+
+  // At the fire: everyone walking with you is saved; anyone still frozen in this stage was left in the cold.
+  recordStage() {
+    if (this.stageRecorded) return;
+    this.stageRecorded = true;
+    const L = this.ledger;
+    for (const c of this.companions) if (c.home && !L.saved.includes(c.home)) L.saved.push(c.home);
+    for (const o of this.objects) {
+      if (o.type !== 'wanderer' || !o.home) continue;
+      if (L.saved.includes(o.home) || L.lost.includes(o.home)) continue;
+      L.lost.push(o.home);
     }
   }
 
@@ -364,7 +430,7 @@ export class Game {
     if (o.type === 'wanderer') {
       o.gone = true;
       // They light a pot of their own from yours. Their fire widens your pulse; it does not warm you.
-      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.id, joinedAt: this.time });
+      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.figId ?? o.id, home: o.home, joinedAt: this.time });
     }
   }
 
@@ -469,6 +535,7 @@ export class Game {
     if (this.fire.reached || this.lightsOut) return;
     if (Math.abs(e.x - this.fire.x) < 110) {
       this.fire.reached = true;
+      this.recordStage();
       const cx = this.fire.x - 60;
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
       this.audio.unlockLayer();

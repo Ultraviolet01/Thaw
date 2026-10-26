@@ -3,6 +3,7 @@ import { groundY } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, INTRO_LOCK } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
+import { VILLAGE } from './village.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -725,7 +726,8 @@ export class Renderer {
 
   // A frozen wanderer: the same figure as a companion, still and drained of color.
   drawWanderer(s, o, warm, t) {
-    const fig = this.figures[o.id];
+    // A companion who froze again keeps the body they had.
+    const fig = this.figures[o.figId ?? o.id];
     // Their fire went out with everyone else's: no pot, arms wrapped round themselves.
     if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t, ground: SNOW_GROUND });
   }
@@ -1020,7 +1022,15 @@ export class Renderer {
     // Only one line is written at a time: the nearest hint that applies right now, so lines never run together.
     const live = (h) => !(h.until && game.hintFlags[h.until]) && !(h.after && !game.hintFlags[h.after]);
     let nearest = null;
+    // When a companion's fire goes out, that is what the frost says, for a few seconds.
+    const note = game.relapseNote && game.time - game.relapseNote.t < 6 ? game.relapseNote : null;
+    if (note) {
+      const age = game.time - note.t;
+      tm.globalAlpha = 0.9 * Math.min(1, age / 0.8) * Math.min(1, (6 - age) / 1);
+      tm.fillText(note.text, note.x, 175);
+    }
     for (const h of game.level.hints) {
+      if (note) break;
       if (live(h) && Math.abs(e.x - h.x) < 420 && (!nearest || Math.abs(e.x - h.x) < Math.abs(e.x - nearest.x))) nearest = h;
     }
     game.level.hints.forEach((h, i) => {
@@ -1641,6 +1651,46 @@ export class Renderer {
     s.stroke();
   }
 
+  // The village from the prologue: a lit window for everyone saved so far, a dark one for those lost
+  // or left behind, and a faint outline for homes not reached yet.
+  drawVillage(c, game, a) {
+    const L = game.ledger;
+    const n = VILLAGE.length;
+    const gap = 92;
+    const x0 = VIEW.w / 2 - ((n - 1) * gap) / 2;
+    const base = 420;
+    VILLAGE.forEach((v, i) => {
+      const saved = L.saved.includes(v.id);
+      const lost = L.lost.includes(v.id);
+      const known = saved || lost;
+      const x = x0 + i * gap;
+      const alpha = a * (known ? 0.95 : 0.3);
+      c.fillStyle = `rgba(22,40,50,${alpha})`;
+      c.fillRect(x - 17, base - 22, 34, 22);
+      c.beginPath();
+      c.moveTo(x - 22, base - 21);
+      c.lineTo(x, base - 38);
+      c.lineTo(x + 22, base - 21);
+      c.closePath();
+      c.fill();
+      // The window.
+      c.fillStyle = saved ? `rgba(255,205,120,${a})` : `rgba(120,140,152,${alpha * 0.6})`;
+      c.fillRect(x - 5, base - 15, 10, 8);
+      if (saved) {
+        c.save();
+        c.globalCompositeOperation = 'lighter';
+        glow(c, x, base - 11, 26, '255,190,110', 0.35 * a);
+        c.restore();
+      }
+      if (known) {
+        c.font = `italic 300 12px ${SERIF}`;
+        c.textAlign = 'center';
+        c.fillStyle = `rgba(22,40,50,${0.85 * a})`;
+        c.fillText(v.name, x, base + 18);
+      }
+    });
+  }
+
   drawPause(c) {
     c.fillStyle = 'rgba(200,222,235,0.6)';
     c.fillRect(0, 0, VIEW.w, VIEW_H);
@@ -1673,8 +1723,16 @@ export class Renderer {
     const forks = game.level.forks || {};
     const said = Object.keys(game.choices).map((k) => forks[k] && forks[k][game.choices[k]]).filter(Boolean);
     if (said.length) c.fillText(said.join('  '), VIEW.w / 2, 280);
+    // What the choice gives you for the road ahead.
+    const carries = game.level.carries || {};
+    const carried = Object.keys(game.choices).map((k) => carries[k] && carries[k][game.choices[k]]).filter(Boolean);
+    if (carried.length) {
+      c.font = `italic 300 15px ${SERIF}`;
+      c.fillText(carried.map((x) => x.text).join('  '), VIEW.w / 2, 308);
+    }
+    this.drawVillage(c, game, b);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to restart', VIEW.w / 2, 320);
+    c.fillText('space to keep wandering   ·   R to restart', VIEW.w / 2, 520);
   }
 }

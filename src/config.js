@@ -18,6 +18,11 @@ export const WARMTH = {
   lanternHealPerSecond: 6,
   fireHealPerSecond: 40,
   fireRadius: 320,
+  // Below this warmth for relapseAfter seconds, the last companion's fire goes out and they freeze again.
+  relapseBelow: 6,
+  relapseAfter: 4,
+  // Warming them again takes more than the first time.
+  relapsePulses: 8,
 };
 
 // The player figure: walks on the snow, no jumping.
