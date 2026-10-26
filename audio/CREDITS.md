@@ -1,6 +1,6 @@
 # Audio credits
 
-All recordings below are human-made and released under CC0 (public domain). Credit is not required, but given gladly.
+The jam theme belongs to its composer. Every other recording is human-made and released under CC0 (public domain); credit is not required, but given gladly.
 
 The recordings were only trimmed and leveled for the game: a 90-second stretch of each wind, and six single cracks cut from the ice recording.
 
