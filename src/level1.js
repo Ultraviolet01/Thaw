@@ -6,21 +6,31 @@ export const level1 = {
   spawn: { x: 160, y: 470 },
   objects: [
     { type: 'tree', x: 720, pulses: 3 },
-    { type: 'lantern', x: 1350, pulses: 4, radius: 230 },
+    // The fork: warm the light (safety now) or the wanderer beside it (connection later). Only one.
+    { type: 'lantern', x: 1300, pulses: 4, radius: 230, fork: 'still' },
+    { type: 'wanderer', x: 1660, pulses: 6, fork: 'still' },
     { type: 'wanderer', x: 3150, pulses: 6 },
     { type: 'tree', x: 3550, pulses: 3 },
   ],
-  // Frozen mist saps warmth while the figure is inside it. It starts just past the lantern's light,
-  // and is long enough that crossing it cold leaves almost nothing. Then a calm stretch before the wanderer.
-  mist: [{ x0: 1650, x1: 2600 }],
+  // Frozen mist saps warmth while the figure is inside it. It starts past the fork,
+  // and is long enough that crossing it with nothing leaves almost nothing. Then a calm stretch before the wanderer.
+  mist: [{ x0: 1850, x1: 2750 }],
   fire: { x: 4050 },
   hints: [
     { x: 300, text: 'arrows to walk', until: 'moved' },
     { x: 650, text: 'hold space to pulse', until: 'pulsed' },
-    { x: 1300, text: 'every pulse costs warmth', until: 'lanternLit' },
+    { x: 980, text: 'every pulse costs warmth', after: 'pulsed' },
+    { x: 1480, text: 'the light, or the one beside it?', until: 'forkChosen' },
     // Shown once the lantern is lit, until the player has warmed up beside it.
-    { x: 1350, text: 'rest by the light', after: 'lanternLit', until: 'rested' },
+    { x: 1300, text: 'rest by the light', after: 'lanternLit', until: 'rested' },
+    // What the cold took, written where it happened.
+    { x: 1300, text: 'the light stays dark', after: 'lostLantern' },
+    { x: 1660, text: 'they stayed frozen', after: 'lostWanderer' },
     { x: 3050, text: 'someone is frozen here' },
   ],
+  // What the stage end says about the fork.
+  forks: {
+    still: { lantern: 'You warmed the light.', wanderer: 'You warmed them instead of the light.' },
+  },
   closingLine: 'Somewhere ahead, something is still warm.',
 };

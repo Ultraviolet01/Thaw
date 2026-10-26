@@ -244,6 +244,14 @@ export class GameAudio {
     }
   }
 
+  // The cold closing over what you didn't choose: a low, hardening crackle.
+  refreeze() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.05;
+    for (let i = 0; i < 8; i++) this.noiseBurst(t + i * 0.09, 0.06, 900 + i * 120, 0.06);
+    this.tone(this.sfxBus, 146.83, t, 2.4, 'sine', 0.06);
+  }
+
   // Picking up an ember: a soft crackle and a low warm note.
   ember() {
     if (!this.ctx) return;

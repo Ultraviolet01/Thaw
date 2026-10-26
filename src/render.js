@@ -792,6 +792,7 @@ export class Renderer {
       let R = 0;
       if (o.state === 'frozen') R = o.progress > 0 ? b.reach * 0.45 * (o.progress / o.pulses) : 0;
       else if (o.state === 'melting') R = b.reach * 0.45 + (b.reach * 0.55 + 30) * o.meltT;
+      else if (o.state === 'lost') R = 0;
       else R = b.reach + 30 + (o.type === 'lantern' ? o.radius * 0.6 : 150) * o.spread;
       const thin = o.state === 'frozen' ? 0.4 : regrow;
       if (R > 0) out.push({ x: b.cx, y: b.cy, R, seed: o.seed, a: fadeAll * thin, obj: o });
@@ -867,10 +868,14 @@ export class Renderer {
     const e = game.ember;
     tm.font = `50px ${HAND}`;
     tm.textAlign = 'center';
+    // Only one line is written at a time: the nearest hint that applies right now, so lines never run together.
+    const live = (h) => !(h.until && game.hintFlags[h.until]) && !(h.after && !game.hintFlags[h.after]);
+    let nearest = null;
+    for (const h of game.level.hints) {
+      if (live(h) && Math.abs(e.x - h.x) < 420 && (!nearest || Math.abs(e.x - h.x) < Math.abs(e.x - nearest.x))) nearest = h;
+    }
     game.level.hints.forEach((h, i) => {
-      const done = h.until && game.hintFlags[h.until];
-      const waiting = h.after && !game.hintFlags[h.after];
-      const target = game.mode === 'title' || done || waiting ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
+      const target = game.mode === 'title' || h !== nearest ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
       this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * 2);
       if (this.hintAlpha[i] < 0.01) return;
       tm.globalAlpha = 0.9 * this.hintAlpha[i];
@@ -938,6 +943,14 @@ export class Renderer {
     for (const o of game.objects) {
       if (o.state === 'thawed' || o.gone) continue;
       const b = o.bounds;
+      if (o.state === 'lost') {
+        // What the cold took: the frost closes over it, thick and pale, its cracks sealed.
+        const k = clamp01((t - o.lostAt) / 2);
+        glow(f, b.cx, b.cy, b.reach + 50, '238,246,252', 0.55 * k);
+        glow(f, b.cx, b.cy, b.reach * 0.6, '245,250,255', 0.35 * k);
+        if (k < 1 && o.progress > 0) this.drawCracks(f, o);
+        continue;
+      }
       if (o.hit > 0) glow(f, b.cx, b.cy, b.reach + 40, '255,190,120', 0.3 * o.hit);
       if (o.progress > 0) this.drawCracks(f, o);
       if (o.state === 'frozen') {
@@ -1110,8 +1123,12 @@ export class Renderer {
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;
     c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW_W / 2, 250);
+    // What was chosen at each fork in this stage.
+    const forks = game.level.forks || {};
+    const said = Object.keys(game.choices).map((k) => forks[k] && forks[k][game.choices[k]]).filter(Boolean);
+    if (said.length) c.fillText(said.join('  '), VIEW_W / 2, 280);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to restart', VIEW_W / 2, 290);
+    c.fillText('space to keep wandering   ·   R to restart', VIEW_W / 2, 320);
   }
 }

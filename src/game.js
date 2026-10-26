@@ -55,7 +55,8 @@ export class Game {
     this.lightsOut = null;
     this.stageEndT = 0;
     this.freeRoam = false;
-    this.hintFlags = { moved: false, pulsed: false, lanternLit: false, rested: false };
+    this.hintFlags = { moved: false, pulsed: false, lanternLit: false, rested: false, forkChosen: false, lostLantern: false, lostWanderer: false };
+    this.choices = {};
     this.barFlash = 6;
     this.flashed = new Set();
     this.audio.resetLayers();
@@ -212,7 +213,23 @@ export class Game {
         o.state = 'melting';
         o.meltT = 0;
         this.audio.melt();
+        if (o.fork) this.chooseFork(o);
       }
+    }
+  }
+
+  // A fork: warming one thing lets the cold take the others in the same fork. They can no longer be thawed.
+  chooseFork(chosen) {
+    if (this.choices[chosen.fork]) return;
+    this.choices[chosen.fork] = chosen.type;
+    this.hintFlags.forkChosen = true;
+    for (const o of this.objects) {
+      if (o === chosen || o.fork !== chosen.fork || o.state !== 'frozen') continue;
+      o.state = 'lost';
+      o.lostAt = this.time;
+      this.hintFlags[o.type === 'lantern' ? 'lostLantern' : 'lostWanderer'] = true;
+      this.audio.setHum(o.id, 0, 0);
+      this.audio.refreeze();
     }
   }
 

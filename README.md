@@ -45,7 +45,10 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Lights out: wake at the last checkpoint with full warmth; thawed things and companions stay
 - Pulse: one ring per heartbeat (60 BPM), each costs warmth; objects crack, glow, then melt
 - Thawing spreads color out from that object and adds one layer to the music
-- Frozen lantern: thaw it for a warm zone that heals, or save warmth for the path
+- The fork: the lantern and a frozen wanderer stand just before the mist, and the frost asks "the light, or the one beside it?"
+  - Warm one and the cold takes the other: its frost thickens and the frost writes what was lost
+  - The light lets you rest to full before the mist; the wanderer walks with you and counts toward the ending
+  - The stage end says what you chose
 - Frozen mist: drains warmth while inside
 - First wanderer: thaw it and it follows you, slowly restores warmth and widens your pulse
 - Shimmer cue: faint motes drift toward the nearest frozen thing, matching its hum, so the game works with sound off
