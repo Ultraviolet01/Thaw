@@ -51,7 +51,7 @@ export class Game {
     this.lightsOut = null;
     this.stageEndT = 0;
     this.freeRoam = false;
-    this.hintFlags = { moved: false, pulsed: false };
+    this.hintFlags = { moved: false, pulsed: false, lanternLit: false, rested: false };
     this.barFlash = 6;
     this.flashed = new Set();
     this.audio.resetLayers();
@@ -224,6 +224,7 @@ export class Game {
       if (d < r) {
         delta += WARMTH.lanternHealPerSecond * (1 - d / r * 0.5);
         nearHeat = true;
+        if (e.warmth >= 95) this.hintFlags.rested = true;
       }
     }
 
@@ -277,6 +278,7 @@ export class Game {
 
   onThawed(o) {
     o.thawedAt = this.time;
+    if (o.type === 'lantern') this.hintFlags.lanternLit = true;
     this.audio.unlockLayer();
     this.audio.chime();
     this.audio.setHum(o.id, 0, 0);

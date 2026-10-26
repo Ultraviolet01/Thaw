@@ -14,7 +14,8 @@ export const WARMTH = {
   lanternHealPerSecond: 6,
   fireHealPerSecond: 40,
   fireRadius: 320,
-  companionRegenPerSecond: 0.45,
+  // More than the cold drains, so walking with a companion slowly warms you.
+  companionRegenPerSecond: 1.2,
   companionRange: 220,
 };
 

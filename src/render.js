@@ -101,20 +101,23 @@ function blobPath(ctx, x, y, R, seed, t) {
 
 // How warmth bends the picture: color drains below 60%, blur starts below 35%.
 function warmthLook(w) {
-  let sat = 1, blur = 0;
+  let sat = 1, blur = 0, bright = 1;
   if (w < THRESHOLDS.frost) sat = 0.55 + 0.45 * clamp01((w - THRESHOLDS.blur) / (THRESHOLDS.frost - THRESHOLDS.blur));
   if (w < THRESHOLDS.blur) {
     const k = clamp01((w - THRESHOLDS.heavy) / (THRESHOLDS.blur - THRESHOLDS.heavy));
     sat = 0.15 + 0.4 * k;
     blur = 2.5 * (1 - k);
+    // Lift the cold scene toward the frost's tone, so clear patches don't read as dark smudges.
+    bright = 1 + 0.3 * (1 - k);
   }
   if (w < THRESHOLDS.heavy) {
     sat = 0.1;
     blur = 2.5 + 3.5 * (1 - w / THRESHOLDS.heavy);
+    bright = 1.3;
   }
   // The frost itself thickens as warmth drops.
   const cold = clamp01((THRESHOLDS.frost - w) / THRESHOLDS.frost);
-  return { sat, blur, frostA: 0.86 + 0.14 * cold, tintA: 0.34 + 0.22 * cold, crystalA: 0.65 + 0.35 * cold };
+  return { sat, blur, bright, frostA: 0.86 + 0.14 * cold, tintA: 0.34 + 0.22 * cold, crystalA: 0.65 + 0.35 * cold };
 }
 
 export class Renderer {
@@ -279,7 +282,7 @@ export class Renderer {
     c.clip();
 
     if (look.blur > 0.05 || look.sat < 0.99) {
-      c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)})`;
+      c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)}) brightness(${look.bright.toFixed(2)})`;
     }
     c.drawImage(this.scene, 0, 0);
     c.filter = 'none';
@@ -724,7 +727,9 @@ export class Renderer {
     const er = w < THRESHOLDS.heavy ? 14 + 18 * (w / THRESHOLDS.heavy) : 40 + 75 * (w / 100);
     out.push({ x: e.x, y: e.y, R: er + 34 * Math.max(0, breath), seed: 1, a: (1 - game.lightsOutAlpha()) * fadeAll });
 
-    for (const c of game.companions) out.push({ x: c.x, y: c.y, R: 26, seed: 2 + c.phase, a: fadeAll });
+    // As the cold takes hold, frost creeps back over what was thawed.
+    const regrow = 0.1 + 0.9 * clamp01((w - THRESHOLDS.heavy) / (THRESHOLDS.frost - THRESHOLDS.heavy));
+    for (const c of game.companions) out.push({ x: c.x, y: c.y, R: 30, seed: 2 + c.phase, a: fadeAll * regrow });
 
     for (const o of game.objects) {
       const b = o.bounds;
@@ -732,12 +737,13 @@ export class Renderer {
       if (o.state === 'frozen') R = o.progress > 0 ? b.reach * 0.45 * (o.progress / o.pulses) : 0;
       else if (o.state === 'melting') R = b.reach * 0.45 + (b.reach * 0.55 + 30) * o.meltT;
       else R = b.reach + 30 + (o.type === 'lantern' ? o.radius * 0.6 : 150) * o.spread;
-      const thin = o.state === 'frozen' ? 0.4 : 1;
+      const thin = o.state === 'frozen' ? 0.4 : regrow;
       if (R > 0) out.push({ x: b.cx, y: b.cy, R, seed: o.seed, a: fadeAll * thin, obj: o });
     }
 
     const f = game.fire;
-    out.push({ x: f.x, y: groundY(f.x) - 70, R: 200 + 8 * Math.sin(t * 3), seed: 77, a: fadeAll });
+    // The fire always shows through, even when everything else has frosted back over.
+    out.push({ x: f.x, y: groundY(f.x) - 70, R: 200 + 8 * Math.sin(t * 3), seed: 77, a: fadeAll * Math.max(0.45, regrow) });
     return out;
   }
 
@@ -807,7 +813,8 @@ export class Renderer {
     tm.textAlign = 'center';
     game.level.hints.forEach((h, i) => {
       const done = h.until && game.hintFlags[h.until];
-      const target = game.mode === 'title' || done ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
+      const waiting = h.after && !game.hintFlags[h.after];
+      const target = game.mode === 'title' || done || waiting ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
       this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * 2);
       if (this.hintAlpha[i] < 0.01) return;
       tm.globalAlpha = 0.9 * this.hintAlpha[i];
