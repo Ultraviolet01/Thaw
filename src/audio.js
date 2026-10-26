@@ -1,6 +1,6 @@
 // Recorded sounds come from human-made CC0 library recordings (see audio/CREDITS.md) and play through
 // plain audio elements, which also work when index.html is opened straight from disk.
-// The music starts empty and each thaw unlocks one more layer.
+// The music layers are still synthesized: they start empty and each thaw unlocks one more.
 
 const PIANO = [440, 523.25, 659.25, 587.33, 523.25, 659.25, 783.99, 659.25];
 const BELLS = [1318.51, 1567.98, 1174.66, 1046.5];
@@ -16,6 +16,21 @@ const CRACK_SRC = [1, 2, 3, 4, 5, 6].map((i) => `audio/sfx/ice-crack-${i}.mp3`);
 const STEP_SRC = ['audio/sfx/snow-step-1.mp3', 'audio/sfx/snow-step-2.mp3'];
 // A recorded heartbeat: four single beats (lub and dub) cut from one slow recording.
 const HEART_SRC = [1, 2, 3, 4].map((i) => `audio/sfx/heartbeat-${i}.mp3`);
+// Her breath on the coal when she pulses: three gentle blows.
+const PULSE_SRC = [1, 2, 3].map((i) => `audio/sfx/pulse-${i}.mp3`);
+// Meltwater dripping as a thawed thing lets go of its ice.
+const MELT_SRC = [1, 2, 3].map((i) => `audio/sfx/melt-${i}.mp3`);
+// Frost closing over what she did not choose: icy branches cracking on a winter night.
+const REFREEZE_SRC = ['audio/sfx/refreeze-1.mp3', 'audio/sfx/refreeze-2.mp3'];
+// A candle blown out, for the moment her coal goes dark.
+const LIGHTS_OUT_SRC = ['audio/sfx/lights-out.mp3'];
+// A short crackle of fire for a lucky ember.
+const EMBER_SRC = ['audio/sfx/ember.mp3'];
+// A singing bowl struck with a soft mallet: a companion joining, the fire reached.
+const CHIME_SRC = ['audio/sfx/chime.mp3'];
+// A rubbed wine glass: the hum of frozen things, pitched per kind of thing.
+const HUM_SRC = 'audio/sfx/glass-hum.mp3';
+const HUM_BASE = 1318.51;
 // The fire at the end of each stage.
 const FIRE_SRC = 'audio/sfx/fire.mp3';
 
@@ -23,8 +38,9 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 // A recording that loops forever. Two copies crossfade over the seam so the loop has no gap or click.
 class FileLoop {
-  constructor(src, fade = 2.5) {
+  constructor(src, fade = 2.5, rate = 1) {
     this.src = src;
+    this.rate = rate;
     this.fade = fade;
     this.els = null;
     this.cur = 0;
@@ -47,22 +63,29 @@ class FileLoop {
   tick() {
     if (!this.els) {
       this.els = [new Audio(this.src), new Audio(this.src)];
-      this.els.forEach((e) => { e.volume = 0; e.muted = this.muted; });
+      this.els.forEach((e) => {
+        e.volume = 0;
+        e.muted = this.muted;
+        e.preservesPitch = false;
+        e.playbackRate = this.rate;
+      });
       this.els[0].play().catch(() => {});
     }
     this.vol += (this.target - this.vol) * 0.12;
     if (Math.abs(this.target - this.vol) < 0.002) this.vol = this.target;
     const a = this.els[this.cur];
     const b = this.els[1 - this.cur];
+    // Measured in the recording's own seconds, so the crossfade lasts this.fade at any playback rate.
     const d = a.duration;
+    const fade = this.fade * this.rate;
     let ka = 1;
     let kb = 0;
-    if (d && a.currentTime > d - this.fade) {
+    if (d && a.currentTime > d - fade) {
       if (b.paused) {
         b.currentTime = 0;
         b.play().catch(() => {});
       }
-      ka = clamp01((d - a.currentTime) / this.fade);
+      ka = clamp01((d - a.currentTime) / fade);
       kb = 1 - ka;
     }
     if (a.ended || (d && a.currentTime >= d - 0.05)) {
@@ -110,7 +133,6 @@ export class GameAudio {
     comp.connect(ctx.destination);
     this.musicBus = this.gainNode(1, this.master);
     this.sfxBus = this.gainNode(1, this.master);
-    this.noise = this.makeNoise(2);
     this.buildLayers();
   }
 
@@ -119,15 +141,6 @@ export class GameAudio {
     g.gain.value = value;
     g.connect(dest);
     return g;
-  }
-
-  makeNoise(seconds) {
-    const ctx = this.ctx;
-    const len = Math.floor(ctx.sampleRate * seconds);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-    return buf;
   }
 
   buildLayers() {
@@ -195,24 +208,6 @@ export class GameAudio {
     o.stop(t + dur + 0.05);
   }
 
-  noiseBurst(t, dur, freq, peak, type = 'highpass') {
-    const ctx = this.ctx;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f);
-    f.connect(g);
-    g.connect(this.sfxBus);
-    src.start(t, Math.random());
-    src.stop(t + dur + 0.05);
-  }
-
   // 0 = a breath of wind, 1 = a gale.
   setWind(amount) {
     this.wind.set(0.18 + 0.62 * clamp01(amount));
@@ -275,23 +270,17 @@ export class GameAudio {
 
 
   pulse() {
-    if (!this.ctx) return;
-    const ctx = this.ctx;
-    const t = ctx.currentTime + 0.02;
-    for (const f of [196, 293.66]) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.06, t + 0.12);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-      o.connect(g);
-      g.connect(this.sfxBus);
-      o.start(t);
-      o.stop(t + 1.3);
-    }
-    this.noiseBurst(t, 0.6, 900, 0.03, 'lowpass');
+    this.playOne(PULSE_SRC, 0.5);
+  }
+
+  // One recording from a list, with a little variation in pitch so repeats do not sound identical.
+  playOne(list, volume, spread = 0.08) {
+    if (this.muted) return;
+    const el = new Audio(list[Math.floor(Math.random() * list.length)]);
+    el.preservesPitch = false;
+    el.playbackRate = 1 - spread + Math.random() * 2 * spread;
+    el.volume = clamp01(volume);
+    el.play().catch(() => {});
   }
 
   // The fire crackles louder as she nears it: 0 = out of earshot, 1 = beside it.
@@ -317,81 +306,40 @@ export class GameAudio {
   }
 
   melt() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    for (let i = 0; i < 10; i++) {
-      this.noiseBurst(t + Math.random() * 1.4, 0.05 + Math.random() * 0.05, 2000 + Math.random() * 2000, 0.04 + Math.random() * 0.08);
-    }
+    this.playOne(MELT_SRC, 0.8, 0.05);
   }
 
   // The cold closing over what you didn't choose: a low, hardening crackle.
+  // The cold closing over what you didn't choose.
   refreeze() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.05;
-    for (let i = 0; i < 8; i++) this.noiseBurst(t + i * 0.09, 0.06, 900 + i * 120, 0.06);
-    this.tone(this.sfxBus, 146.83, t, 2.4, 'sine', 0.06);
+    this.playOne(REFREEZE_SRC, 0.9, 0.05);
   }
 
   // Picking up an ember: a soft crackle and a low warm note.
+  // Picking up an ember: a short crackle of fire.
   ember() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.02;
-    for (let i = 0; i < 6; i++) this.noiseBurst(t + Math.random() * 0.5, 0.04, 1800 + Math.random() * 1500, 0.05);
-    this.tone(this.sfxBus, 329.63, t, 1.6, 'sine', 0.07);
-    this.tone(this.sfxBus, 493.88, t + 0.12, 1.8, 'sine', 0.05);
+    this.playOne(EMBER_SRC, 0.8, 0.06);
   }
 
   chime() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.05;
-    [880, 1318.51, 1760].forEach((f, i) => this.tone(this.sfxBus, f, t + i * 0.08, 2.5, 'triangle', 0.06));
+    this.playOne(CHIME_SRC, 0.6, 0.03);
   }
 
   lightsOut() {
-    if (!this.ctx) return;
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(110, t);
-    o.frequency.exponentialRampToValueAtTime(40, t + 1.5);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.1, t + 0.1);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
-    o.connect(g);
-    g.connect(this.sfxBus);
-    o.start(t);
-    o.stop(t + 1.7);
+    this.playOne(LIGHTS_OUT_SRC, 0.9, 0);
   }
 
   // A quiet tone per frozen object that grows louder as the ember gets close.
+  // Each frozen thing hums as she nears it. freq sets the pitch; level 0.04 is right beside it.
   setHum(id, freq, level) {
-    if (!this.ctx) return;
     let h = this.hums.get(id);
     if (!h) {
       if (level <= 0.0005) return;
-      const g = this.gainNode(0, this.sfxBus);
-      const oscs = [freq, freq * 1.004].map((f) => {
-        const o = this.ctx.createOscillator();
-        o.type = 'sine';
-        o.frequency.value = f;
-        o.connect(g);
-        o.start();
-        return o;
-      });
-      h = { g, oscs, level: 0 };
+      h = new FileLoop(HUM_SRC, 2.5, freq / HUM_BASE);
+      h.setMuted(this.muted);
       this.hums.set(id, h);
     }
-    if (Math.abs(h.level - level) > 0.001) {
-      h.level = level;
-      h.g.gain.setTargetAtTime(level, this.ctx.currentTime, 0.15);
-    }
-    if (level === 0) {
-      const stopAt = this.ctx.currentTime + 1;
-      h.oscs.forEach((o) => o.stop(stopAt));
-      this.hums.delete(id);
-    }
+    h.set(level * 12);
   }
 
   // Played with a plain audio element, which also works when index.html is opened straight from disk.
@@ -429,6 +377,7 @@ export class GameAudio {
     this.wind.setMuted(this.muted);
     this.storm.setMuted(this.muted);
     this.fire.setMuted(this.muted);
+    this.hums.forEach((h) => h.setMuted(this.muted));
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_LEVEL, this.ctx.currentTime, 0.05);
   }
 }
