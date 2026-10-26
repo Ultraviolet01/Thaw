@@ -59,7 +59,6 @@ export class Prologue {
     this.t = 0;
     this.done = false;
     this.nextBeat = 0.5;
-    this.beats = 0;
   }
 
   update(dt, audio) {
@@ -70,7 +69,6 @@ export class Prologue {
     const theme = audio.themePlaying();
     if (t >= this.nextBeat && t < PROLOGUE_LENGTH - 0.5) {
       if (!theme || t < 5 || t > 54) audio.heartbeat(100);
-      if (!theme) audio.onBeat(++this.beats);
       this.nextBeat += 1 + 0.45 * this.cold();
     }
     audio.setWind(this.wind() * (theme ? 0.5 : 1));

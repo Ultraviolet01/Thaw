@@ -35,6 +35,7 @@ export class Game {
 
   reset() {
     const L = this.level;
+    this.audio.setRest(false);
     // What the player's choices have added up to, carried from stage to stage. Restarting a stage
     // goes back to how things stood when the stage began.
     this.ledger = this.ledgerAtStageStart
@@ -252,7 +253,6 @@ export class Game {
   onBeat() {
     this.beatIndex++;
     if (!this.lightsOut) this.audio.heartbeat(this.ember.warmth);
-    this.audio.onBeat(this.beatIndex);
     if (this.pulsing) this.emitPulse();
   }
 
@@ -541,6 +541,7 @@ export class Game {
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
       this.audio.unlockLayer();
       this.audio.chime();
+      this.audio.setRest(true);
       if (!this.freeRoam) {
         this.mode = 'stageEnd';
         this.stageEndT = 0;
@@ -574,13 +575,10 @@ export class Game {
   updateAudio() {
     const e = this.ember;
     const w = e.warmth;
-    const u = this.audio.unlocked;
-    // Layers drop out one by one between 35% and 15%, and are silent below that.
-    let allowed = 99;
-    if (this.lightsOut && !this.lightsOut.respawned) allowed = 0;
-    else if (w < THRESHOLDS.heavy) allowed = 0;
-    else if (w < THRESHOLDS.blur) allowed = Math.ceil(((w - THRESHOLDS.heavy) / (THRESHOLDS.blur - THRESHOLDS.heavy)) * u);
-    this.audio.setMusic(allowed);
+    // The music fades between 35% and 15% warmth and the cold music takes over. Silent while the light is out.
+    const out = this.lightsOut && !this.lightsOut.respawned;
+    const warm = out ? 0 : clamp((w - THRESHOLDS.heavy) / (THRESHOLDS.blur - THRESHOLDS.heavy), 0, 1);
+    this.audio.setMusic(warm, out ? 0 : 1 - warm);
 
     for (const o of this.objects) {
       if (o.state !== 'frozen') continue;

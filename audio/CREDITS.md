@@ -5,6 +5,20 @@ The jam theme belongs to its composer. Every other recording is human-made and r
 The recordings were only cut, leveled and faded for the game. The melt drips and the ember crackle also have the low rumble filtered out so the drips and crackles come forward, and the game plays some of them slightly faster or slower so repeats vary.
 
 - **Theme:** thatgamejam #02 theme by Jason Grace. Used unmodified, only inside this jam entry, as the jam rules require.
+
+## Music
+
+The tracks were re-encoded to a smaller file size and leveled to the same loudness, nothing else.
+
+- **Stage music:** "Long Winter" by Indieteur, OpenGameArt, 2018. https://opengameart.org/content/long-winter
+  - File: `music/long-winter.mp3`
+- **When she is close to freezing:** "Esther" by Kistol, OpenGameArt, 2014. https://opengameart.org/content/esther
+  - File: `music/esther.mp3`
+- **Rest at the fire, and the prologue if the theme cannot play:** "November Snow" by cynicmusic (The Cynic Project, cynicmusic.com, pixelsphere.org), OpenGameArt, 2017. https://opengameart.org/content/november-snow
+  - File: `music/november-snow.mp3`
+
+## Sound effects
+
 - **Wind (ambient):** "Winter wind whistling through window.mp3" by audible-edge, Freesound, 2009. https://freesound.org/people/audible-edge/sounds/69512/
   - File: `sfx/wind-window.mp3`
 - **Wind (hazards):** "Howling winter storm ambient sounds" by DBlover, Freesound, 2020. https://freesound.org/people/DBlover/sounds/505999/

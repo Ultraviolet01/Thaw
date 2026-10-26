@@ -1,12 +1,17 @@
-// Recorded sounds come from human-made CC0 library recordings (see audio/CREDITS.md) and play through
-// plain audio elements, which also work when index.html is opened straight from disk.
-// The music layers are still synthesized: they start empty and each thaw unlocks one more.
+// Every sound is a human-made recording: the jam's theme, and CC0 music and recordings credited in
+// audio/CREDITS.md. They play through plain audio elements, which also work when index.html is opened
+// straight from disk.
 
-const PIANO = [440, 523.25, 659.25, 587.33, 523.25, 659.25, 783.99, 659.25];
-const BELLS = [1318.51, 1567.98, 1174.66, 1046.5];
-const MASTER_LEVEL = 0.9;
 // The jam's theme by Jason Grace, played exactly as supplied. The rules allow it only unmodified.
 const THEME_SRC = 'audio/thatgamejam02_theme.wav';
+// The stage's music, "Long Winter" by Indieteur. It starts faint and grows with every thaw.
+const STAGE_MUSIC_SRC = 'audio/music/long-winter.mp3';
+// "Esther" by Kistol: a darker piano that takes over as she gets dangerously cold.
+const COLD_MUSIC_SRC = 'audio/music/esther.mp3';
+// "November Snow" by cynicmusic: rest at the fire, and the prologue's music if the theme cannot play.
+const REST_MUSIC_SRC = 'audio/music/november-snow.mp3';
+// How many thaws it takes for the stage music to reach full volume.
+const FULL_AFTER = 5;
 // Wind through a window: the ambient wind everywhere for now. The howling storm is kept for the hazards.
 const WIND_SRC = 'audio/sfx/wind-window.mp3';
 const STORM_SRC = 'audio/sfx/wind-storm.mp3';
@@ -106,106 +111,23 @@ class FileLoop {
 
 export class GameAudio {
   constructor() {
-    this.ctx = null;
+    this.started = false;
     this.muted = false;
     this.unlocked = 0;
-    this.layers = [];
     this.hums = new Map();
     this.wind = new FileLoop(WIND_SRC);
     this.storm = new FileLoop(STORM_SRC);
     this.fire = new FileLoop(FIRE_SRC);
+    this.stageMusic = new FileLoop(STAGE_MUSIC_SRC, 4);
+    this.coldMusic = new FileLoop(COLD_MUSIC_SRC, 4);
+    this.restMusic = new FileLoop(REST_MUSIC_SRC, 4);
+    this.loops = [this.wind, this.storm, this.fire, this.stageMusic, this.coldMusic, this.restMusic];
+    this.resting = false;
   }
 
-  // Must run from a user gesture so the browser allows playback.
+  // Called from the first key press: browsers only let a page play sound after the player has interacted.
   start() {
-    if (this.ctx) {
-      this.ctx.resume();
-      return;
-    }
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    const ctx = new AC();
-    this.ctx = ctx;
-    this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : MASTER_LEVEL;
-    const comp = ctx.createDynamicsCompressor();
-    this.master.connect(comp);
-    comp.connect(ctx.destination);
-    this.musicBus = this.gainNode(1, this.master);
-    this.sfxBus = this.gainNode(1, this.master);
-    this.buildLayers();
-  }
-
-  gainNode(value, dest) {
-    const g = this.ctx.createGain();
-    g.gain.value = value;
-    g.connect(dest);
-    return g;
-  }
-
-  buildLayers() {
-    const ctx = this.ctx;
-    const layer = (peak) => ({ gain: this.gainNode(0, this.musicBus), peak, target: 0 });
-
-    // 0: low drone
-    const drone = layer(0.06);
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 520;
-    lp.connect(drone.gain);
-    for (const f of [110, 110.7, 164.81]) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.value = 0.33;
-      o.connect(g);
-      g.connect(lp);
-      o.start();
-    }
-
-    // 1: soft piano line, one note per beat
-    const piano = layer(1);
-    piano.onBeat = (t, b) => this.tone(piano.gain, PIANO[b % PIANO.length], t, 2.2, 'triangle', 0.09);
-
-    // 2: high pad
-    const pad = layer(0.03);
-    for (const f of [659.25, 987.77]) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      o.connect(pad.gain);
-      o.start();
-    }
-
-    // 3: bass every four beats
-    const bass = layer(1);
-    bass.onBeat = (t, b) => {
-      if (b % 4 === 0) this.tone(bass.gain, b % 8 === 0 ? 55 : 65.41, t, 3.5, 'sine', 0.35);
-    };
-
-    // 4: bells on off-beats
-    const bells = layer(1);
-    bells.onBeat = (t, b) => {
-      if (b % 2 === 1) this.tone(bells.gain, BELLS[(b >> 1) % BELLS.length], t, 3, 'sine', 0.05);
-    };
-
-    this.layers = [drone, piano, pad, bass, bells];
-  }
-
-  tone(dest, freq, t, dur, type, peak) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = type;
-    o.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g);
-    g.connect(dest);
-    o.start(t);
-    o.stop(t + dur + 0.05);
+    this.started = true;
   }
 
   // 0 = a breath of wind, 1 = a gale.
@@ -218,42 +140,32 @@ export class GameAudio {
     this.storm.set(0.9 * clamp01(amount));
   }
 
-  // The prologue's warm music: the first three layers together, faded by k. Gameplay takes the layers back after.
+  // The prologue's music when the theme cannot play, faded by k.
   setPrologueMusic(k) {
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-    this.layers.forEach((l, i) => {
-      const target = i < 3 ? l.peak * k : 0;
-      if (Math.abs(target - l.target) > 0.001 || (target === 0 && l.target !== 0)) {
-        l.target = target;
-        l.gain.gain.setTargetAtTime(target, now, 0.8);
-      }
-    });
+    this.restMusic.set(0.6 * clamp01(k));
   }
 
-  onBeat(beat) {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.03;
-    for (const l of this.layers) {
-      if (l.onBeat && l.target > 0) l.onBeat(t, beat);
+  // warm: 1 while she is warm, falling to 0 as she freezes. cold: how strongly the cold music plays.
+  // The stage music grows with every thaw, from faint to full.
+  setMusic(warm, cold) {
+    if (this.resting) return;
+    const grown = 0.25 + 0.75 * Math.min(1, this.unlocked / FULL_AFTER);
+    this.stageMusic.set(0.55 * grown * clamp01(warm));
+    this.coldMusic.set(0.5 * clamp01(cold));
+  }
+
+  // At the fire the stage music gives way to rest.
+  setRest(on) {
+    this.resting = on;
+    if (on) {
+      this.stageMusic.set(0);
+      this.coldMusic.set(0);
     }
-  }
-
-  // allowed: how many unlocked layers the current warmth lets through.
-  setMusic(allowed) {
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-    this.layers.forEach((l, i) => {
-      const target = i < this.unlocked && i < allowed ? l.peak : 0;
-      if (target !== l.target) {
-        l.target = target;
-        l.gain.gain.setTargetAtTime(target, now, target > 0 ? 1.2 : 0.6);
-      }
-    });
+    this.restMusic.set(on ? 0.5 : 0);
   }
 
   unlockLayer() {
-    this.unlocked = Math.min(this.unlocked + 1, 5);
+    this.unlocked = Math.min(this.unlocked + 1, FULL_AFTER);
   }
 
   resetLayers() {
@@ -267,7 +179,6 @@ export class GameAudio {
     el.volume = warmth < 35 ? 0.8 : 0.55;
     el.play().catch(() => {});
   }
-
 
   pulse() {
     this.playOne(PULSE_SRC, 0.5);
@@ -309,13 +220,11 @@ export class GameAudio {
     this.playOne(MELT_SRC, 0.8, 0.05);
   }
 
-  // The cold closing over what you didn't choose: a low, hardening crackle.
   // The cold closing over what you didn't choose.
   refreeze() {
     this.playOne(REFREEZE_SRC, 0.9, 0.05);
   }
 
-  // Picking up an ember: a soft crackle and a low warm note.
   // Picking up an ember: a short crackle of fire.
   ember() {
     this.playOne(EMBER_SRC, 0.8, 0.06);
@@ -329,7 +238,6 @@ export class GameAudio {
     this.playOne(LIGHTS_OUT_SRC, 0.9, 0);
   }
 
-  // A quiet tone per frozen object that grows louder as the ember gets close.
   // Each frozen thing hums as she nears it. freq sets the pitch; level 0.04 is right beside it.
   setHum(id, freq, level) {
     let h = this.hums.get(id);
@@ -343,7 +251,7 @@ export class GameAudio {
   }
 
   // Played with a plain audio element, which also works when index.html is opened straight from disk.
-  // If the file is missing, the prologue falls back to the game's own music.
+  // If the file is missing, the prologue plays November Snow instead.
   playTheme() {
     if (this.theme) return;
     const el = new Audio(THEME_SRC);
@@ -374,10 +282,7 @@ export class GameAudio {
   toggleMute() {
     this.muted = !this.muted;
     if (this.theme) this.theme.muted = this.muted;
-    this.wind.setMuted(this.muted);
-    this.storm.setMuted(this.muted);
-    this.fire.setMuted(this.muted);
+    this.loops.forEach((l) => l.setMuted(this.muted));
     this.hums.forEach((h) => h.setMuted(this.muted));
-    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_LEVEL, this.ctx.currentTime, 0.05);
   }
 }

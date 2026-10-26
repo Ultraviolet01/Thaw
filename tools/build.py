@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORDER = ['config', 'terrain', 'level1', 'prologue', 'village', 'input', 'audio', 'character', 'game', 'render', 'main']
 # Files shipped next to index.html, byte for byte. The theme track must stay unmodified.
 ASSETS = ['audio/thatgamejam02_theme.wav', 'audio/CREDITS.md'] + sorted(
-    str(p.relative_to(ROOT)) for p in (ROOT / 'audio' / 'sfx').glob('*.mp3'))
+    str(p.relative_to(ROOT)) for d in ('sfx', 'music') for p in (ROOT / 'audio' / d).glob('*.mp3'))
 
 PLAY_NOTES = """THAW
 
@@ -32,6 +32,7 @@ Controls
 Best in Chrome, Edge or Firefox.
 
 Music: thatgamejam #02 theme by Jason Grace, used unmodified.
+Music: Long Winter by Indieteur, Esther by Kistol, November Snow by cynicmusic (all CC0, OpenGameArt).
 Sound recordings: human-made CC0 recordings from Freesound. Full credits in audio/CREDITS.md.
 """
 

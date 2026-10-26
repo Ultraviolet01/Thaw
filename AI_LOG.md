@@ -19,6 +19,6 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 The visuals have no image files: everything on screen is drawn by the AI-written code in the table above.
 
 - Every sound effect (wind, ice cracking, footsteps, heartbeat, her breath on the coal, melting, refreezing, the ember, lights out, the hums and the chime, the fire) is a human-made CC0 recording from Freesound, credited in audio/CREDITS.md. They were only cut, leveled, faded and filtered
-- The music layers during play are still synthesized by AI-written code, and are being replaced with human-made music
+- All music during play is human-made CC0 music from OpenGameArt (Long Winter by Indieteur, Esther by Kistol, November Snow by cynicmusic), credited in audio/CREDITS.md. It was only re-encoded and leveled. No sound in the game is synthesized or AI-generated
 - Fonts are existing Google Fonts (Reenie Beanie, Spectral), not generated
 - Theme music is the jam's official track by Jason Grace, used unmodified, not generated
