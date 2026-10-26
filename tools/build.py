@@ -27,7 +27,8 @@ Controls
 - Pulse: hold Space (you cannot move while pulsing)
 - Pause: Esc
 - Mute: M
-- Restart: R
+- Replay the stage: R
+- Start over from the beginning: Enter (at the stage end or when paused)
 
 Best in Chrome, Edge or Firefox.
 

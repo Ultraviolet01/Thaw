@@ -1704,7 +1704,8 @@ export class Renderer {
     const lines = [
       'move: arrows, WASD or left stick',
       'pulse: hold space or A',
-      'mute: M   ·   restart: R   ·   full screen: F',
+      'mute: M   ·   replay this stage: R   ·   full screen: F',
+      'enter to start over from the beginning',
       'esc or start to resume',
     ];
     lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32));
@@ -1735,6 +1736,6 @@ export class Renderer {
     this.drawVillage(c, game, b);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to restart', VIEW.w / 2, 520);
+    c.fillText('space to keep wandering   ·   R to replay this stage   ·   enter to start over from the beginning', VIEW.w / 2, 520);
   }
 }

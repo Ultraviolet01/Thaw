@@ -113,6 +113,7 @@ export class Game {
 
     if (this.mode === 'paused') {
       if (input.pausePressed) this.mode = 'play';
+      else if (this.startOverPressed(input)) this.startOver();
       return;
     }
     if (input.pausePressed && this.mode === 'play') {
@@ -126,6 +127,10 @@ export class Game {
     }
     if (this.mode === 'stageEnd') {
       this.stageEndT += dt;
+      if (this.stageEndT > 6 && this.startOverPressed(input)) {
+        this.startOver();
+        return;
+      }
       if (this.stageEndT > 6 && input.pulsePressed) {
         this.mode = 'play';
         this.freeRoam = true;
@@ -134,6 +139,15 @@ export class Game {
     }
 
     this.simulate(dt, input);
+  }
+
+  startOverPressed(input) {
+    return input.wasPressed('Enter') || input.wasPressed('NumpadEnter');
+  }
+
+  // Back to the title and the prologue, with every choice forgotten: the same as opening the game fresh.
+  startOver() {
+    location.reload();
   }
 
   endPrologue() {
