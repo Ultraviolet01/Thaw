@@ -49,4 +49,6 @@ export const EMBERS = {
   warmth: 15,
   life: 25, // seconds before it cools and fades
   pickupRange: 30,
+  // The most that can ever appear in one stage, picked up or not. A stage can set its own with maxEmbers.
+  maxPerStage: 2,
 };

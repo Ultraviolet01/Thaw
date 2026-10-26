@@ -45,6 +45,7 @@ export class Game {
     this.shimmers = [];
     this.shimmerTimer = 0;
     this.pickups = [];
+    this.embersSpawned = 0;
     this.pickupTimer = between(EMBERS.rollEvery);
     this.flare = 0;
     this.beatTimer = 0;
@@ -400,12 +401,15 @@ export class Game {
     if (this.pickupTimer > 0) return;
     this.pickupTimer = between(EMBERS.rollEvery);
     if (this.pickups.length > 0) return;
+    const max = this.level.maxEmbers ?? EMBERS.maxPerStage;
+    if (this.embersSpawned >= max) return;
     const odds = e.warmth < EMBERS.coldBelow ? EMBERS.coldChance : EMBERS.chance;
     if (Math.random() > odds) return;
     const limit = this.fire.reached ? this.level.width - 100 : this.fire.x - 150;
     const x = e.x + e.facing * between(EMBERS.ahead);
     if (x < 200 || x > limit) return;
     this.pickups.push({ x, t: 0, life: EMBERS.life, taken: false, seed: Math.floor(Math.random() * 1e6) });
+    this.embersSpawned++;
   }
 
   updateFire() {

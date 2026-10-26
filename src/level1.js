@@ -33,5 +33,7 @@ export const level1 = {
   forks: {
     still: { lantern: 'You warmed the light.', wanderer: 'You warmed them instead of the light.' },
   },
+  // Only one lucky ember can turn up in the opening stage.
+  maxEmbers: 1,
   closingLine: 'Somewhere ahead, something is still warm.',
 };
