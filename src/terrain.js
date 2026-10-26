@@ -36,6 +36,7 @@ export function objectBounds(o) {
     y1: base,
     cx,
     cy: base - s.h / 2,
-    reach: Math.max(s.w, s.h) / 2,
+    // Never less than 60, so a ring that visibly touches a small figure counts as a hit.
+    reach: Math.max(60, Math.max(s.w, s.h) / 2),
   };
 }
