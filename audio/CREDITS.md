@@ -2,6 +2,8 @@
 
 All recordings below are human-made and released under CC0 (public domain). Credit is not required, but given gladly.
 
+The recordings were only trimmed and leveled for the game: a 90-second stretch of each wind, and six single cracks cut from the ice recording.
+
 - **Theme:** thatgamejam #02 theme by Jason Grace. Used unmodified, only inside this jam entry, as the jam rules require.
 - **Wind (ambient):** "Winter wind whistling through window.mp3" by audible-edge, Freesound, 2009. https://freesound.org/people/audible-edge/sounds/69512/
   - File: `sfx/wind-window.mp3`
