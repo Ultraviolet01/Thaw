@@ -30,8 +30,10 @@ function smooth(ctx, pts, start) {
 }
 
 export class Character {
-  constructor(x, scale = 1, colors = {}, facing = 1) {
+  // floor(x) gives the y the feet stand on: the snow surface, or a cave floor.
+  constructor(x, scale = 1, colors = {}, facing = 1, floor = groundY) {
     this.s = scale;
+    this.floor = floor;
     this.x = x;
     this.facing = facing;
     this.phase = 0;
@@ -43,7 +45,7 @@ export class Character {
   }
 
   chain(n, len) {
-    const top = groundY(this.x) - 47 * this.s;
+    const top = this.floor(this.x) - 47 * this.s;
     const pts = [];
     for (let i = 0; i <= n; i++) {
       const y = top + i * len * this.s;
@@ -57,7 +59,7 @@ export class Character {
   }
 
   anchors() {
-    const s = this.s, f = this.facing, g = groundY(this.x), b = this.bob();
+    const s = this.s, f = this.facing, g = this.floor(this.x), b = this.bob();
     return {
       g,
       b,
@@ -116,7 +118,7 @@ export class Character {
         // The back edge stays behind the body, the front edge stays roughly in front.
         if (isBack && f * (q.x - this.x) > 2 * s) q.x = this.x + f * 2 * s;
         if (!isBack && f * (q.x - this.x) < -3 * s) q.x = this.x - f * 3 * s;
-        const floor = groundY(q.x) - 0.5;
+        const floor = this.floor(q.x) - 0.5;
         if (q.y > floor) q.y = floor;
       }
     }
