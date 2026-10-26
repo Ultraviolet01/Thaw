@@ -1,5 +1,5 @@
 import {
-  VIEW_W, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS,
+  VIEW_W, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
 } from './config.js';
 import { groundY, objectBounds } from './terrain.js';
 
@@ -10,6 +10,7 @@ const CHEST = 41;
 export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
 const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const between = ([a, b]) => a + Math.random() * (b - a);
 
 export class Game {
   constructor(level, audio) {
@@ -43,6 +44,9 @@ export class Game {
     this.rings = [];
     this.shimmers = [];
     this.shimmerTimer = 0;
+    this.pickups = [];
+    this.pickupTimer = between(EMBERS.rollEvery);
+    this.flare = 0;
     this.beatTimer = 0;
     this.beatIndex = 0;
     this.pulsing = false;
@@ -171,6 +175,7 @@ export class Game {
     this.updateObjects(dt);
     this.updateCompanions(dt);
     this.updateEffects(dt);
+    this.updatePickups(dt);
     this.updateFire();
     this.updateLightsOut(dt);
 
@@ -351,6 +356,36 @@ export class Game {
     return best;
   }
 
+  // Lucky embers. A roll every so often; better odds when cold. One at a time, always ahead, never past the fire.
+  updatePickups(dt) {
+    const e = this.ember;
+    this.flare = Math.max(0, this.flare - dt * 1.5);
+    for (const p of this.pickups) p.t += dt;
+    this.pickups = this.pickups.filter((p) => p.t < p.life && !p.taken);
+    if (this.mode !== 'play' || this.lightsOut) return;
+
+    for (const p of this.pickups) {
+      if (Math.abs(e.x - p.x) < EMBERS.pickupRange) {
+        p.taken = true;
+        e.warmth = Math.min(WARMTH.max, e.warmth + EMBERS.warmth);
+        this.flare = 1;
+        this.rings.push({ x: e.x, y: e.y, t: 0, r: 70, strong: false });
+        this.audio.ember();
+      }
+    }
+
+    this.pickupTimer -= dt;
+    if (this.pickupTimer > 0) return;
+    this.pickupTimer = between(EMBERS.rollEvery);
+    if (this.pickups.length > 0) return;
+    const odds = e.warmth < EMBERS.coldBelow ? EMBERS.coldChance : EMBERS.chance;
+    if (Math.random() > odds) return;
+    const limit = this.fire.reached ? this.level.width - 100 : this.fire.x - 150;
+    const x = e.x + e.facing * between(EMBERS.ahead);
+    if (x < 200 || x > limit) return;
+    this.pickups.push({ x, t: 0, life: EMBERS.life, taken: false, seed: Math.floor(Math.random() * 1e6) });
+  }
+
   updateFire() {
     const e = this.ember;
     if (this.fire.reached || this.lightsOut) return;
@@ -385,6 +420,7 @@ export class Game {
       });
       this.camX = clamp(e.x - VIEW_W * 0.42, 0, this.level.width - VIEW_W);
       this.flashed.clear();
+      this.pickups = [];
     }
     if (lo.t >= 4.2) this.lightsOut = null;
   }

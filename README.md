@@ -49,6 +49,7 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Frozen mist: drains warmth while inside
 - First wanderer: thaw it and it follows you, slowly restores warmth and widens your pulse
 - Shimmer cue: faint motes drift toward the nearest frozen thing, matching its hum, so the game works with sound off
+- Lucky embers: now and then a warm coal turns up in the snow ahead (better odds when cold). Walk over it for +15% warmth; it cools and fades after about 25 seconds
 - Fire at the end: full warmth, checkpoint, closing line
 
 ## Code layout

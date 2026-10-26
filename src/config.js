@@ -38,3 +38,15 @@ export const THRESHOLDS = { frost: 60, blur: 35, heavy: 15 };
 
 export const MELT_SECONDS = 1.6;
 export const SPREAD_SECONDS = 3;
+
+// Lucky embers: now and then a warm coal turns up in the snow ahead. Walk over it for a little warmth.
+export const EMBERS = {
+  rollEvery: [12, 20], // seconds between chances
+  chance: 0.45, // odds on each roll
+  coldChance: 0.75, // odds when warmth is below coldBelow
+  coldBelow: 40,
+  ahead: [500, 900], // how far ahead of the player it appears
+  warmth: 15,
+  life: 25, // seconds before it cools and fades
+  pickupRange: 30,
+};

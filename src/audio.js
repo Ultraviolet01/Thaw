@@ -244,6 +244,15 @@ export class GameAudio {
     }
   }
 
+  // Picking up an ember: a soft crackle and a low warm note.
+  ember() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.02;
+    for (let i = 0; i < 6; i++) this.noiseBurst(t + Math.random() * 0.5, 0.04, 1800 + Math.random() * 1500, 0.05);
+    this.tone(this.sfxBus, 329.63, t, 1.6, 'sine', 0.07);
+    this.tone(this.sfxBus, 493.88, t + 0.12, 1.8, 'sine', 0.05);
+  }
+
   chime() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + 0.05;

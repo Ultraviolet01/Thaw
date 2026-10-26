@@ -335,6 +335,7 @@ export class Renderer {
     s.translate(-cam, 0);
     this.drawGround(s, cam);
     for (const o of game.objects) this.drawObject(s, o, t);
+    this.drawPickups(s, game, t);
     this.drawFire(s, game.fire, t);
     this.drawFigures(s, game, dt, t);
     this.drawLights(s, game, t);
@@ -559,6 +560,56 @@ export class Renderer {
     s.fill();
   }
 
+  // How visible a lucky ember is: it warms up into view, then cools and fades near the end of its life.
+  pickupFade(p) {
+    return clamp01(p.t / 0.8) * clamp01((p.life - p.t) / 4);
+  }
+
+  // A coal half-buried in the snow: dark stone, glowing cracks, a thread of smoke and the odd spark.
+  drawPickups(s, game, t) {
+    for (const p of game.pickups) {
+      const k = this.pickupFade(p);
+      if (k <= 0) continue;
+      const x = p.x;
+      const y = groundY(x) + 1;
+      const r = rng(p.seed);
+      s.globalAlpha = k;
+      s.fillStyle = '#1a1410';
+      s.beginPath();
+      s.ellipse(x, y, 11, 6.5, 0, Math.PI, 0);
+      s.fill();
+      s.beginPath();
+      s.ellipse(x + 7, y + 0.5, 6, 4, 0.2, Math.PI, 0);
+      s.fill();
+      const hot = 0.75 + 0.25 * Math.sin(t * 6 + p.seed);
+      s.strokeStyle = `rgba(255,${Math.round(150 + 60 * hot)},70,${hot})`;
+      s.lineWidth = 1.3;
+      s.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const sx = x - 7 + r() * 14;
+        s.moveTo(sx, y - 1);
+        s.lineTo(sx + (r() - 0.5) * 6, y - 3 - r() * 3);
+      }
+      s.stroke();
+      s.fillStyle = `rgba(255,190,110,${0.9 * hot})`;
+      s.beginPath();
+      s.ellipse(x - 1, y - 1.5, 4, 1.6, 0, 0, Math.PI * 2);
+      s.fill();
+      for (let i = 0; i < 4; i++) {
+        const q = (t * 0.5 + i / 4 + p.seed * 0.001) % 1;
+        s.fillStyle = `rgba(200,205,210,${0.25 * (1 - q)})`;
+        s.beginPath();
+        s.arc(x + Math.sin(q * 6 + i) * 4, y - 8 - q * 40, 2 + q * 4, 0, Math.PI * 2);
+        s.fill();
+        if (i < 2) {
+          s.fillStyle = `rgba(255,190,100,${0.8 * (1 - q)})`;
+          s.fillRect(x + Math.sin(q * 9 + i * 2) * 6, y - 4 - q * 30, 1.5, 1.5);
+        }
+      }
+      s.globalAlpha = 1;
+    }
+  }
+
   // A frozen wanderer: the same figure as a companion, still and drained of color.
   drawWanderer(s, o, warm, t) {
     const fig = this.figures[o.id];
@@ -623,6 +674,10 @@ export class Renderer {
       }
     }
     for (const c of game.companions) glow(s, c.x, c.y, 46, '255,215,160', 0.3);
+    for (const p of game.pickups) {
+      const k = this.pickupFade(p) * (0.85 + 0.15 * Math.sin(t * 7 + p.seed));
+      glow(s, p.x, groundY(p.x) - 6, 70, '255,150,60', 0.4 * k);
+    }
     const e = game.ember;
     const dim = 1 - game.lightsOutAlpha();
     glow(s, e.x, e.y, game.glowRadius(), '255,200,140', 0.28 * dim);
@@ -655,7 +710,7 @@ export class Renderer {
       this.figures[c.objId].draw(s, { glow: 0.55 * dim, t, beat: game.pulsing ? game.beatEnvelope() : 0 });
     }
     this.player.update(dt, e.x, e.facing, wind, t);
-    const glow = (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) * dim;
+    const glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
     this.player.draw(s, { glow, t, pulsing: game.pulsing, beat: game.beatEnvelope() });
   }
 
@@ -729,6 +784,7 @@ export class Renderer {
 
     // As the cold takes hold, frost creeps back over what was thawed.
     const regrow = 0.1 + 0.9 * clamp01((w - THRESHOLDS.heavy) / (THRESHOLDS.frost - THRESHOLDS.heavy));
+    for (const p of game.pickups) out.push({ x: p.x, y: groundY(p.x) - 10, R: 34, seed: p.seed % 97, a: fadeAll * this.pickupFade(p) });
     for (const c of game.companions) out.push({ x: c.x, y: c.y, R: 30, seed: 2 + c.phase, a: fadeAll * regrow });
 
     for (const o of game.objects) {
