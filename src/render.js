@@ -2064,11 +2064,15 @@ export class Renderer {
 
   drawStageEndText(c, game) {
     const T = game.stageEndT;
-    const a = clamp01((T - 2.8) / 1);
+    const a = clamp01((T - 1) / 1);
     c.textAlign = 'center';
+    // Said plainly first: the stage is done.
+    c.font = `300 16px ${SERIF}`;
+    c.fillStyle = `rgba(22,40,50,${0.9 * a})`;
+    c.fillText(`STAGE ${game.stage + 1} COMPLETE`.split('').join(' '), VIEW.w / 2, 96);
     c.font = `300 14px ${SERIF}`;
-    c.fillStyle = `rgba(22,40,50,${0.8 * a})`;
-    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW.w / 2, 112);
+    c.fillStyle = `rgba(22,40,50,${0.7 * a})`;
+    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW.w / 2, 122);
     const b = clamp01((T - 5.8) / 1);
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;

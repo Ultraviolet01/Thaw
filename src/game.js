@@ -767,6 +767,9 @@ export class Game {
     if (this.fire.reached || this.lightsOut) return;
     if (Math.abs(e.x - this.fire.x) < 110) {
       this.fire.reached = true;
+      // The stage's opening title never lingers into its ending.
+      this.intro = null;
+      this.titleFade = 0;
       this.recordStage();
       const cx = this.fire.x - 60;
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
