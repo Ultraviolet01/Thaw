@@ -3,11 +3,13 @@ import {
 } from './config.js';
 import { groundY, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
+import { POT_HEIGHT } from './character.js';
 
-export const PLAYER_SCALE = 1.5;
-export const COMPANION_SCALE = 1.25;
-// The ember sits this far above the feet, at scale 1.
-const CHEST = 41;
+// The player is a child; the villagers she finds are grown-ups.
+export const PLAYER_SCALE = 1.4;
+export const COMPANION_SCALE = 1.6;
+// The ember pot is carried this far above the feet, at scale 1.
+const CHEST = POT_HEIGHT;
 export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
 const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -259,9 +261,11 @@ export class Game {
       if (Math.hypot(e.x - b.cx, e.y - b.cy) > r + b.reach) continue;
       // At a fork, whatever you crack first is your choice: the other side no longer takes your warmth.
       if (o.fork && o.progress === 0 && this.objects.some((x) => x !== o && x.fork === o.fork && x.state === 'frozen' && x.progress > 0)) continue;
-      o.progress++;
+      // Every companion's fire joins your pulse, so thawing takes fewer pulses the more of you there are.
+      o.progress += 1 + this.companions.length;
       o.hit = 1;
       this.audio.crack();
+      o.progress = Math.min(o.progress, o.pulses);
       if (o.progress >= o.pulses) {
         o.state = 'melting';
         o.meltT = 0;
@@ -313,9 +317,6 @@ export class Game {
     for (const m of this.level.mist) {
       if (e.x > m.x0 && e.x < m.x1) delta -= WARMTH.mistDrainPerSecond;
     }
-    for (const c of this.companions) {
-      if (Math.hypot(e.x - c.x, e.y - c.y) < WARMTH.companionRange) delta += WARMTH.companionRegenPerSecond;
-    }
 
     e.warmth = clamp(e.warmth + delta * dt, 0, WARMTH.max);
 
@@ -362,7 +363,8 @@ export class Game {
     this.audio.setHum(o.id, 0, 0);
     if (o.type === 'wanderer') {
       o.gone = true;
-      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.id });
+      // They light a pot of their own from yours. Their fire widens your pulse; it does not warm you.
+      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.id, joinedAt: this.time });
     }
   }
 

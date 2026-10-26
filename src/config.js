@@ -8,15 +8,12 @@ export const SLOW_BEAT_EXTRA = 0.7;
 
 export const WARMTH = {
   max: 100,
-  drainPerSecond: 0.9,
+  drainPerSecond: 0.75,
   pulseCost: 2,
-  mistDrainPerSecond: 3.5,
+  mistDrainPerSecond: 2.2,
   lanternHealPerSecond: 6,
   fireHealPerSecond: 40,
   fireRadius: 320,
-  // More than the cold drains, so walking with a companion slowly warms you.
-  companionRegenPerSecond: 1.2,
-  companionRange: 220,
 };
 
 // The player figure: walks on the snow, no jumping.

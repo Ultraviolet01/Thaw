@@ -2,7 +2,7 @@ import { VIEW_W, VIEW_H, PULSE, THRESHOLDS } from './config.js';
 import { groundY } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, INTRO_LOCK } from './game.js';
-import { PEOPLE, FLOWERS, LINES, TREE_X } from './prologue.js';
+import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -21,6 +21,14 @@ const C = {
   frost: '#7fb3e0',
   amber: '#f2b25c',
 };
+
+// Coats, scarves and mittens for the grown-up villagers, so each one looks like a different person.
+const VILLAGERS = [
+  { coat: '#4a3f36', fold: '#66574a', scarf: '#5d7a6a', stripe: '#d9d2bf', mitten: '#5d7a6a', fur: '#d8cdb9' },
+  { coat: '#33424a', fold: '#4b5d66', scarf: '#b08a3c', stripe: '#efe2c0', mitten: '#7a5a3a', fur: '#e2d8c6' },
+  { coat: '#4d3a3a', fold: '#6a5050', scarf: '#3f5d78', stripe: '#dbe2e8', mitten: '#3f5d78', fur: '#e8dfcf' },
+  { coat: '#3d4636', fold: '#56604c', scarf: '#8c3f2f', stripe: '#ead8bf', mitten: '#8c3f2f', fur: '#ddd3c1' },
+];
 
 const SMALL_W = 320;
 const SMALL_H = 180;
@@ -148,7 +156,7 @@ export class Renderer {
     // Each wanderer keeps its figure from frozen to companion, so the thaw is one continuous body.
     this.figures = {};
     level.objects.forEach((o, i) => {
-      if (o.type === 'wanderer') this.figures[i] = new Character(o.x, COMPANION_SCALE, { cloak: '#3b3230', fold: '#5d4d46' }, -1);
+      if (o.type === 'wanderer') this.figures[i] = new Character(o.x, COMPANION_SCALE, VILLAGERS[i % VILLAGERS.length], -1);
     });
 
     const r = rng(42);
@@ -657,7 +665,8 @@ export class Renderer {
   // A frozen wanderer: the same figure as a companion, still and drained of color.
   drawWanderer(s, o, warm, t) {
     const fig = this.figures[o.id];
-    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0.5 * warm, t });
+    // Their fire went out with everyone else's: no pot, arms wrapped round themselves.
+    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t });
   }
 
   drawFire(s, f, t) {
@@ -735,7 +744,24 @@ export class Renderer {
     });
   }
 
-  // The player and companions: hooded figures with an ember in the chest.
+  // Sparks arcing from one pot to another as fire is shared.
+  drawSparkTrail(s, from, to, p) {
+    s.save();
+    s.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const q = clamp01(p * 1.25 - i * 0.04);
+      if (q <= 0 || q >= 1) continue;
+      const x = from.x + (to.x - from.x) * q;
+      const y = from.y + (to.y - from.y) * q - Math.sin(q * Math.PI) * 26;
+      s.fillStyle = `rgba(255,${190 - i * 8},110,${0.9 - i * 0.1})`;
+      s.beginPath();
+      s.arc(x, y, 2.4 - i * 0.25, 0, Math.PI * 2);
+      s.fill();
+    }
+    s.restore();
+  }
+
+  // The player and companions: bundled villagers carrying their fire in clay pots.
   drawFigures(s, game, dt, t) {
     const e = game.ember;
     const w = game.displayWarmth();
@@ -747,7 +773,11 @@ export class Renderer {
       if (!fig) continue;
       if (Math.abs(fig.x - c.x) > 200) this.figures[c.objId] = new Character(c.x, COMPANION_SCALE, fig.c, c.facing);
       this.figures[c.objId].update(dt, c.x, c.facing, wind, t);
-      this.figures[c.objId].draw(s, { glow: 0.55 * dim, t, beat: game.pulsing ? game.beatEnvelope() : 0 });
+      // The fire passes from her pot to theirs as they join: a few sparks, then their own coal glows.
+      const since = t - (c.joinedAt ?? -99);
+      const lit = clamp01((since - 0.7) / 0.5);
+      this.figures[c.objId].draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0 });
+      if (since < 1.3) this.drawSparkTrail(s, this.player.chest(), this.figures[c.objId].chest(), since / 1.3);
     }
     this.player.update(dt, e.x, e.facing, wind, t);
     let glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
@@ -764,11 +794,11 @@ export class Renderer {
       s.closePath();
       s.clip();
       s.translate(0, (1 - k) * 100);
-      this.player.draw(s, { glow, t, pulsing: false, beat: 0 });
+      this.player.draw(s, { glow, t, dt, pulsing: false, beat: 0 });
       s.restore();
       return;
     }
-    this.player.draw(s, { glow, t, pulsing: game.pulsing, beat: game.beatEnvelope() });
+    this.player.draw(s, { glow, t, dt, pulsing: game.pulsing, beat: game.beatEnvelope() });
   }
 
   drawSnow(s, cam, dt, t) {
@@ -1213,9 +1243,15 @@ export class Renderer {
     const cold = P.cold();
     const cam = P.cam();
     if (!this.prologueFigs) {
-      this.prologueFigs = PEOPLE.map((p) => new Character(p.x, p.player ? PLAYER_SCALE : 1.38, p.player ? {} : { cloak: p.cloak, fold: p.fold }, p.facing));
+      this.prologueFigs = {
+        child: new Character(childX(0), PLAYER_SCALE, {}, 1),
+        walkers: WALKERS.map((w) => new Character(w.from, COMPANION_SCALE, VILLAGERS[w.coat], 1)),
+        stayers: STAYERS.map((p) => new Character(p.x, COMPANION_SCALE, VILLAGERS[p.coat], p.facing)),
+      };
     }
+    const figs = this.prologueFigs;
     const s = this.sctx;
+    const wind = -70 - 520 * P.wind();
 
     // Sky: an amber evening before, the frozen night after.
     const sky = s.createLinearGradient(0, 0, 0, VIEW_H * 0.75);
@@ -1223,7 +1259,7 @@ export class Renderer {
     sky.addColorStop(1, mix('#d9a265', C.skyBottom, cold));
     s.fillStyle = sky;
     s.fillRect(0, 0, VIEW_W, VIEW_H);
-    glow(s, 380 - cam * 0.15, 455, 440, '255,196,120', 0.42 * (1 - cold));
+    glow(s, 300 - cam * 0.15, 455, 440, '255,196,120', 0.42 * (1 - cold));
     const ridge = (par, color, fn) => {
       s.fillStyle = color;
       s.beginPath();
@@ -1254,6 +1290,7 @@ export class Renderer {
       s.strokeStyle = `rgba(214,182,104,${0.65 * (1 - cold)})`;
       s.lineWidth = 1;
       for (let x = Math.floor(x0 / 7) * 7; x < x1; x += 7) {
+        if (Math.abs(x - HEARTH_X) < 60) continue;
         const h = 6 + (hash(41, x) + 1) * 5;
         const lean = hash(43, x) * 3 + Math.sin(t * 1.3 + x * 0.05) * 1.5 - 4 * P.wind();
         s.beginPath();
@@ -1267,6 +1304,8 @@ export class Renderer {
     s.beginPath();
     for (let x = x0; x <= x1; x += 10) (x === x0 ? s.moveTo : s.lineTo).call(s, x, groundY(x));
     s.stroke();
+
+    for (const h of HOUSES) this.drawHouse(s, h, P.windowLit(h), cold, t, P.wind());
 
     // Small cold-country flowers; the frost takes them with everything else.
     for (const f of FLOWERS) {
@@ -1285,41 +1324,62 @@ export class Renderer {
         s.arc(f.x + sway + Math.cos(a) * 2.6, gy - 15 + Math.sin(a) * 2.6, 2, 0, Math.PI * 2);
         s.fill();
       }
-      s.fillStyle = mix('#d98b2b', '#b8c8d0', cold);
-      s.beginPath();
-      s.arc(f.x + sway, gy - 15, 1.4, 0, Math.PI * 2);
-      s.fill();
     }
 
-    // The great tree and the fire beneath it.
-    this.drawPine(s, TREE_X, groundY(TREE_X) + 6, 430, 4242, P.tree());
-    const fireK = P.fire();
+    // The shared hearth in the square: a ring of stones round the village's one fire.
+    const hb = groundY(HEARTH_X) + 4;
+    s.fillStyle = mix('#5b5047', '#7d909b', cold);
+    for (let k = -3; k <= 3; k++) {
+      s.beginPath();
+      s.ellipse(HEARTH_X + k * 11, hb - 2 + Math.abs(k) * 0.6, 6.5, 4.5, 0, 0, Math.PI * 2);
+      s.fill();
+    }
+    const fireK = P.hearth();
     if (fireK > 0.02) {
-      const fb = groundY(TREE_X) + 4;
       s.save();
-      s.translate(TREE_X, fb);
-      s.scale(fireK, fireK);
-      s.translate(-TREE_X, -fb);
-      this.drawFire(s, { x: TREE_X }, t);
+      s.translate(HEARTH_X, hb);
+      s.scale(fireK * 1.25, fireK * 1.25);
+      s.translate(-HEARTH_X, -hb);
+      this.drawFire(s, { x: HEARTH_X }, t);
       s.restore();
     }
 
-    // The people. Their fires go out one by one; the last one, apart from the rest, is you.
-    const wind = -70 - 520 * P.wind();
-    PEOPLE.forEach((p, i) => {
-      const fig = this.prologueFigs[i];
-      fig.update(dt, p.x, p.facing, wind, t);
-      fig.draw(s, { frozen: P.frozenOf(p), glow: P.glowOf(p), t });
+    // Villagers taking coals home, those who stay by the fire, and the child setting off.
+    WALKERS.forEach((w, i) => {
+      const st = P.walker(w);
+      if (st.inside) return;
+      const fig = figs.walkers[i];
+      fig.update(dt, st.x, t < w.start ? -1 : st.facing, wind, t);
+      fig.draw(s, { glow: 1, t, dt, pot: true });
     });
+    STAYERS.forEach((p, i) => {
+      const fig = figs.stayers[i];
+      fig.update(dt, p.x, p.facing, wind, t);
+      fig.draw(s, { frozen: P.stayerFrozen(p), glow: P.stayerGlow(p), t, dt, pot: true });
+    });
+    const cx = childX(t);
+    figs.child.update(dt, cx, 1, wind, t);
+    figs.child.draw(s, { frozen: P.childFrozen(), glow: P.childGlow(), t, dt, pot: true });
 
     s.save();
     s.globalCompositeOperation = 'lighter';
-    glow(s, TREE_X, groundY(TREE_X) - 30, 1 + 380 * fireK, '255,150,60', 0.36 * fireK);
-    glow(s, TREE_X, groundY(TREE_X) - 210, 320, '255,190,110', 0.24 * P.tree());
-    PEOPLE.forEach((p, i) => {
-      const ch = this.prologueFigs[i].chest();
-      glow(s, ch.x, ch.y, 52, '255,200,140', 0.32 * P.glowOf(p));
+    glow(s, HEARTH_X, hb - 30, 1 + 400 * fireK, '255,150,60', 0.38 * fireK);
+    for (const h of HOUSES) {
+      const lit = P.windowLit(h);
+      if (lit > 0) glow(s, h.x + h.w * 0.18, groundY(h.x) - h.h * 0.45, 70, '255,190,110', 0.3 * lit);
+    }
+    WALKERS.forEach((w, i) => {
+      if (!P.walker(w).inside) {
+        const ch = figs.walkers[i].chest();
+        glow(s, ch.x, ch.y, 46, '255,200,140', 0.3);
+      }
     });
+    STAYERS.forEach((p, i) => {
+      const ch = figs.stayers[i].chest();
+      glow(s, ch.x, ch.y, 46, '255,200,140', 0.3 * P.stayerGlow(p));
+    });
+    const cc = figs.child.chest();
+    glow(s, cc.x, cc.y, 56, '255,200,140', 0.34 * P.childGlow());
     s.restore();
     s.restore();
 
@@ -1338,9 +1398,8 @@ export class Renderer {
 
     // The frost grows in from the edges until it covers everything; two of the lines are written into it.
     const fr = P.frost();
-    const player = this.prologueFigs[PEOPLE.length - 1].chest();
-    const px = player.x - cam;
-    const py = player.y;
+    const px = cc.x - cam;
+    const py = cc.y;
     if (fr > 0) {
       this.smctx.filter = 'saturate(0.35) brightness(1.25)';
       this.smctx.drawImage(this.scene, 0, 0, SMALL_W, SMALL_H);
@@ -1361,21 +1420,17 @@ export class Renderer {
       const m = this.mctx;
       m.setTransform(1, 0, 0, 1, 0, 0);
       m.clearRect(0, 0, FW, FH);
-      m.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
       // Frost creeps in unevenly: it starts at the edges and reaches the middle last.
-      if (fr < 1) {
-        m.setTransform(1, 0, 0, 1, 0, 0);
-        m.putImageData(this.growthMask(fr), 0, 0);
-        m.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
-      }
-      // The one glow the frost cannot close over.
-      const g = P.glowOf(PEOPLE[PEOPLE.length - 1]);
+      if (fr < 1) m.putImageData(this.growthMask(fr), 0, 0);
+      m.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+      // The one coal the frost cannot close over.
+      const g = P.childGlow();
       m.fillStyle = '#fff';
       m.globalAlpha = 0.9;
       blobPath(m, px, py, (10 + 10 * g) * P.zoom(), 5, t);
       m.fill();
       m.globalAlpha = 1;
-      m.font = `64px ${HAND}`;
+      m.font = `60px ${HAND}`;
       m.textAlign = 'center';
       for (const l of LINES) {
         if (!l.frost) continue;
@@ -1400,7 +1455,7 @@ export class Renderer {
     c.beginPath();
     c.rect(0, 0, VIEW_W, VIEW_H);
     c.clip();
-    // The world zooms toward the last glow; the frost on the glass does not.
+    // The world zooms toward the last coal; the frost on the glass does not.
     const z = P.zoom();
     c.save();
     c.translate(px, py);
@@ -1415,7 +1470,6 @@ export class Renderer {
       c.drawImage(this.frost, 0, 0, VIEW_W, VIEW_H);
       c.globalAlpha = 1;
     }
-    // Darkness closing in on everything but the last glow.
     const d = P.dark();
     if (d > 0) {
       const dg = c.createRadialGradient(px, py, 20, px, py, 560);
@@ -1424,21 +1478,21 @@ export class Renderer {
       c.fillStyle = dg;
       c.fillRect(0, 0, VIEW_W, VIEW_H);
     }
-    // The last glow shows as warm light through the frost, not as a hole in it.
+    // The last coal shows as warm light through the frost, not as a hole in it.
     if (fr > 0.3) {
-      const g = P.glowOf(PEOPLE[PEOPLE.length - 1]);
+      const g = P.childGlow();
       const pulse = 0.85 + 0.15 * Math.sin(t * 3.2);
       c.save();
       c.globalCompositeOperation = 'lighter';
       glow(c, px, py, (70 + 40 * g) * z * pulse, '255,170,90', 0.32 * g * clamp01((fr - 0.3) / 0.3));
-      glow(c, px, py, 14 * z, '255,230,190', 0.7 * g);
+      glow(c, px, py, 12 * z, '255,230,190', 0.7 * g);
       c.restore();
     }
     // The first line is written in warm light, before there is any frost.
     const first = LINES[0];
     const l0 = P.line(first);
     if (l0.p > 0 && l0.a > 0) {
-      c.font = `56px ${HAND}`;
+      c.font = `54px ${HAND}`;
       c.textAlign = 'center';
       c.fillStyle = `rgba(255,226,178,${0.92 * l0.a})`;
       this.writeReveal(c, first.text, VIEW_W / 2, 170, l0.p);
@@ -1459,6 +1513,70 @@ export class Renderer {
       c.fillText('esc to skip', VIEW_W - 28, VIEW_H - 24);
     }
     c.restore();
+  }
+
+  // A village house: timber walls, a pitched roof that gathers snow as the cold comes,
+  // one warm window and a chimney that smokes while the window is lit.
+  drawHouse(s, h, lit, cold, t, wind) {
+    const gy = groundY(h.x) + 4;
+    const x0 = h.x - h.w / 2;
+    const wallTop = gy - h.h;
+    s.fillStyle = mix('#6e4d36', '#5c6f7a', cold * 0.8);
+    s.fillRect(x0, wallTop, h.w, h.h);
+    // Timber boards.
+    s.strokeStyle = mix('#5a3d2a', '#4e5f69', cold * 0.8);
+    s.lineWidth = 1;
+    for (let y = wallTop + 9; y < gy; y += 9) {
+      s.beginPath();
+      s.moveTo(x0, y);
+      s.lineTo(x0 + h.w, y);
+      s.stroke();
+    }
+    // Roof.
+    const peak = wallTop - h.w * 0.42;
+    s.fillStyle = mix('#3c2b22', '#3a4a54', cold * 0.8);
+    s.beginPath();
+    s.moveTo(x0 - 10, wallTop + 2);
+    s.lineTo(h.x, peak);
+    s.lineTo(x0 + h.w + 10, wallTop + 2);
+    s.closePath();
+    s.fill();
+    if (cold > 0.05) {
+      s.strokeStyle = `rgba(232,242,248,${Math.min(1, cold * 1.4)})`;
+      s.lineWidth = 2 + 4 * cold;
+      s.beginPath();
+      s.moveTo(x0 - 8, wallTop);
+      s.lineTo(h.x, peak + 2);
+      s.lineTo(x0 + h.w + 8, wallTop);
+      s.stroke();
+    }
+    // Chimney, smoking while there is fire inside.
+    const chx = h.x + h.w * 0.24;
+    s.fillStyle = mix('#4a3a30', '#46565f', cold * 0.8);
+    s.fillRect(chx - 6, peak + h.w * 0.12, 12, h.w * 0.2);
+    if (lit > 0.05) {
+      for (let i = 0; i < 5; i++) {
+        const q = (t * 0.25 + i / 5 + h.x * 0.001) % 1;
+        s.fillStyle = `rgba(190,180,170,${0.22 * (1 - q) * lit})`;
+        s.beginPath();
+        s.arc(chx + q * 30 - wind * 60 * q + Math.sin(q * 6 + i) * 4, peak + h.w * 0.1 - q * 70, 4 + q * 9, 0, Math.PI * 2);
+        s.fill();
+      }
+    }
+    // Door and window.
+    s.fillStyle = mix('#3a281d', '#3a4a54', cold * 0.8);
+    s.fillRect(h.x - h.w * 0.32, gy - h.h * 0.62, h.w * 0.2, h.h * 0.62);
+    const wx = h.x + h.w * 0.08, wy = gy - h.h * 0.62, ww = h.w * 0.22, wh = h.h * 0.3;
+    s.fillStyle = lit > 0 ? `rgba(255,${Math.round(196 + 20 * lit)},120,${0.25 + 0.75 * lit})` : 'rgba(40,52,60,0.9)';
+    if (lit <= 0.01) s.fillStyle = mix('#2b3238', '#2f3b44', cold);
+    s.fillRect(wx, wy, ww, wh);
+    s.strokeStyle = mix('#3a281d', '#3a4a54', cold * 0.8);
+    s.lineWidth = 2;
+    s.strokeRect(wx, wy, ww, wh);
+    s.beginPath();
+    s.moveTo(wx + ww / 2, wy);
+    s.lineTo(wx + ww / 2, wy + wh);
+    s.stroke();
   }
 
   drawPause(c) {

@@ -1,4 +1,4 @@
-// The prologue, "The last fire": the world before the cold, the cold coming, and the one ember left.
+// The prologue, "The last coal": a village that shares one fire, the night the cold came, and the coal one child carried.
 // No menus and no cut into play: it ends in darkness, and the first stage rises out of it.
 // It runs the length of the jam's theme track (60 s) and its moments sit on the track's shape:
 // a quiet start, a slow build, a full swell, then a fade to silence.
@@ -11,29 +11,47 @@ const smooth = (a, b, t) => {
   return k * k * (3 - 2 * k);
 };
 
-// The place by the great tree, before the cold. The same tree waits at the end of the game.
-export const prologueGround = (x) => 600 + Math.sin(x * 0.0031) * 10 + Math.sin(x * 0.011 + 1) * 3;
-export const TREE_X = 800;
+export const prologueGround = (x) => 600 + Math.sin(x * 0.0031) * 9 + Math.sin(x * 0.011 + 1) * 3;
 
-// The people gathered round the tree. Each fire goes out in turn; the last figure is the player.
-export const PEOPLE = [
-  { x: 560, facing: 1, cloak: '#3b3230', fold: '#5d4d46', outAt: 23 },
-  { x: 640, facing: 1, cloak: '#2f3a3a', fold: '#4b5c5c', outAt: 26.6 },
-  { x: 705, facing: 1, cloak: '#3a3328', fold: '#5c5140', outAt: 30.2 },
-  { x: 895, facing: -1, cloak: '#33302e', fold: '#504a46', outAt: 24.7 },
-  { x: 962, facing: -1, cloak: '#2c3438', fold: '#465258', outAt: 28.4 },
-  { x: 1042, facing: -1, cloak: '#3b3230', fold: '#5d4d46', outAt: 32 },
-  { x: 1190, facing: -1, player: true },
+// The village square and its one shared fire.
+export const HEARTH_X = 760;
+
+// The houses. Each window goes dark in turn when the cold comes. litAt is when a coal reaches home:
+// for the two houses a walker goes to, it is the walker's start plus the walk (distance / 45 px per second).
+export const HOUSES = [
+  { x: 330, w: 118, h: 78, litAt: 0, darkAt: 25 },
+  { x: 535, w: 100, h: 70, litAt: 8.6, darkAt: 29.5 },
+  { x: 1010, w: 112, h: 80, litAt: 12.2, darkAt: 27 },
+  { x: 1340, w: 104, h: 74, litAt: 0, darkAt: 32 },
 ];
 
+// Villagers taking a coal home: they leave the fire, walk to a door, and that window lights.
+export const WALKERS = [
+  { from: 720, house: 1, start: 4.5, coat: 0 },
+  { from: 800, house: 2, start: 7.5, coat: 1 },
+];
+
+// Villagers who stay by the fire. Their coals go out when the hearth does.
+export const STAYERS = [
+  { x: 690, facing: 1, outAt: 23, coat: 2 },
+  { x: 838, facing: -1, outAt: 25.5, coat: 3 },
+  { x: 890, facing: -1, outAt: 28, coat: 0 },
+];
+
+// The child takes her coal from the fire and sets off for home. The storm catches her on the way.
+export function childX(t) {
+  if (t < 14) return 735;
+  return Math.min(1170, 735 + (t - 14) * 32);
+}
+
 // Small cold-country flowers in the grass. The frost takes them with everything else.
-export const FLOWERS = [470, 515, 600, 676, 742, 858, 930, 1005, 1080, 1130, 1255].map((x, i) => ({ x, seed: i * 31 + 7, yellow: i % 3 === 0 }));
+export const FLOWERS = [415, 470, 600, 655, 900, 945, 1085, 1135, 1230, 1270].map((x, i) => ({ x, seed: i * 31 + 7, yellow: i % 3 === 0 }));
 
 // The three lines. The first is written in warm light; the others are written into the frost.
 export const LINES = [
-  { text: 'everyone used to carry a little fire', write: [8, 11.5], fade: [17, 19.5], frost: false },
-  { text: 'then the cold came', write: [36, 38.5], fade: [43.5, 45.5], frost: true },
-  { text: 'except one', write: [51, 53], fade: [56, 57.8], frost: true },
+  { text: 'every night, the village shared one fire', write: [8, 11.8], fade: [17, 19.5], frost: false },
+  { text: 'then the cold came, and every hearth went out', write: [36, 40], fade: [44, 46], frost: true },
+  { text: 'except the coal she carried', write: [51, 53.8], fade: [56.4, 57.9], frost: true },
 ];
 
 export class Prologue {
@@ -70,8 +88,7 @@ export class Prologue {
   wind() { return 0.08 + 0.92 * smooth(20, 32, this.t) * (1 - 0.6 * smooth(46, 56, this.t)); }
   // How far the frost has grown in from the edges of the screen.
   frost() { return smooth(28, 47, this.t); }
-  fire() { return 1 - smooth(21, 29, this.t); }
-  tree() { return 1 - smooth(22, 38, this.t); }
+  hearth() { return 1 - smooth(21, 29, this.t); }
   dark() { return 0.78 * smooth(45, 56, this.t); }
   // Black at the very start and the very end.
   black() {
@@ -80,12 +97,23 @@ export class Prologue {
     if (t < 7) return 1 - (t - 3) / 4;
     return smooth(57.5, 60, t);
   }
-  // The camera drifts, then pushes in on the last glow.
-  cam() { return 150 + 110 * smooth(3, 46, this.t); }
+  // The camera drifts with the child, then pushes in on her coal.
+  cam() { return 160 + 220 * smooth(10, 40, this.t); }
   zoom() { return 1 + 0.85 * smooth(46, 59, this.t); }
 
-  frozenOf(p) { return p.player ? 0.5 * smooth(34, 44, this.t) : smooth(p.outAt, p.outAt + 1.6, this.t); }
-  glowOf(p) { return p.player ? 0.95 - 0.7 * smooth(34, 44, this.t) : 1 - smooth(p.outAt, p.outAt + 1.2, this.t); }
+  windowLit(h) { return clamp01((this.t - h.litAt) / 0.6) * (1 - smooth(h.darkAt, h.darkAt + 1.2, this.t)); }
+  stayerFrozen(p) { return smooth(p.outAt, p.outAt + 1.6, this.t); }
+  stayerGlow(p) { return 1 - smooth(p.outAt, p.outAt + 1.2, this.t); }
+  childFrozen() { return 0.5 * smooth(34, 44, this.t); }
+  childGlow() { return 0.95 - 0.7 * smooth(34, 44, this.t); }
+
+  // A walker's position and whether they are still outside.
+  walker(w) {
+    const h = HOUSES[w.house];
+    const dur = Math.abs(h.x - w.from) / 45;
+    const p = clamp01((this.t - w.start) / dur);
+    return { x: w.from + (h.x - w.from) * p, inside: p >= 1, facing: Math.sign(h.x - w.from) || 1 };
+  }
 
   // How much of a line is written (0..1) and how visible it is.
   line(l) {

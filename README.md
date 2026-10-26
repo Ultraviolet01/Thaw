@@ -1,6 +1,6 @@
 # Thaw
 
-A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a frozen world, thaws (melts) what it finds and gathers companions until the whole world warms.
+A slow, atmospheric survival game for thatgamejam #02. A child carries her village's last coal across a frozen world, thaws (melts) what she finds and gathers companions until the whole world warms.
 
 ## Controls
 
@@ -10,22 +10,25 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Mute: M
 - Restart: R
 
-## Prologue: "The last fire"
+## Prologue: "The last coal"
 
 - Plays after "press any key" (browsers only allow sound after a key press); Esc skips it
 - 60 seconds, the length of the jam's theme track, with its moments on the track's shape
-- The world before the cold: warm evening light, the great tree, people gathered with embers in their chests, small cold-country flowers
-- The cold comes: color drains, frost creeps in from the edges, the fires go out one by one, the tree goes dark
-- Three lines: "everyone used to carry a little fire" (written in light), "then the cold came" and "except one" (written into the frost)
-- One glow is left. Out of the dark, the figure rises from the snow in Stage 1, its first pulse melts the first patch of frost, and "thaw" is written in the frost. No cut, no menu: the first key press just walks
+- A village on a warm evening: houses with lit windows and smoking chimneys, one shared hearth in the square, villagers carrying coals home in clay pots, a child taking hers and setting off
+- The cold comes: snow on the roofs, the hearth dies, the villagers by the fire freeze, the windows go dark one by one, frost creeps in from the edges
+- Three lines: "every night, the village shared one fire" (written in light), "then the cold came, and every hearth went out" and "except the coal she carried" (written into the frost)
+- Out of the dark, the child rises from the snow in Stage 1, blows on her coal, its first pulse melts the first patch of frost, and "thaw" is written in the frost. No cut, no menu: the first key press just walks
 - Music: thatgamejam #02 theme by Jason Grace, played unmodified from `audio/thatgamejam02_theme.wav`
 
 ## The character
 
-- A small hooded figure walking through the snow, with an ember glowing in the chest
-- The ember is the warmth: it dims as warmth drops and pulses with the heartbeat
-- The cloak moves as cloth, swinging with each step and the wind
-- Frozen wanderers are hooded figures too; once thawed they walk with you
+- A child bundled against the cold: quilted coat with a fur hem, fur-trimmed hood, a knitted striped scarf, mittens and boots
+- She carries the village's last coal in a small clay pot, held in both hands. The coal's glow is her warmth
+- Pulsing: she lifts the pot to her face and blows on the coal
+- The coat and the short scarf end move as cloth, swinging with each step and the wind
+- Frozen villagers have no pot (their fire went out) and hug themselves against the cold
+- When one is thawed, a spark carries fire from her pot to a pot of their own, and they walk with her
+- Companions do not warm her. Their fire joins her pulse instead: each companion adds to every pulse, so thawing takes fewer pulses
 
 ## Art direction: frosted glass
 
@@ -54,7 +57,7 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
   - The light lets you rest to full before the mist; the wanderer walks with you and counts toward the ending
   - The stage end says what you chose
 - Frozen mist: drains warmth while inside
-- First wanderer: thaw it and it follows you, slowly restores warmth and widens your pulse
+- Wanderers: thaw one and they walk with you, their fire joining your pulse
 - Shimmer cue: faint motes drift toward the nearest frozen thing, matching its hum, so the game works with sound off
 - Lucky embers: now and then a warm coal turns up in the snow ahead (better odds when cold). Walk over it for +15% warmth; it cools and fades after about 25 seconds
 - Fire at the end: full warmth, checkpoint, closing line
@@ -62,11 +65,11 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 ## Code layout
 
 - `src/main.js`: boot and frame loop
-- `src/prologue.js`: the prologue's timeline, people, flowers and lines
+- `src/prologue.js`: the prologue's timeline, village, people, flowers and lines
 - `src/game.js`: game state, warmth, pulse, thawing, companions, lights out
 - `src/render.js`: Canvas drawing, the frost layer and melt mask, warmth effects, warmth bar, screens
 - `src/audio.js`: synthesized audio (heartbeat, wind, hums, music layers)
-- `src/character.js`: the hooded figure and its cloth cloak, used for the player and companions
+- `src/character.js`: the bundled villagers (coat, hood, scarf, mittens, ember pot), used for the player, companions and the prologue
 - `src/input.js`: keyboard and gamepad
 - `src/level1.js`: Stage 1 layout
 - `src/config.js`: tuning numbers

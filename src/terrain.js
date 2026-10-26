@@ -19,7 +19,7 @@ export function groundY(x) {
 const SIZES = {
   tree: { w: 132, h: 170, dx: 0 },
   lantern: { w: 56, h: 130, dx: 8 },
-  wanderer: { w: 50, h: 80, dx: 0 },
+  wanderer: { w: 56, h: 92, dx: 0 },
   heart: { w: 300, h: 440, dx: 0 },
 };
 

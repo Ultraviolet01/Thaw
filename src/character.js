@@ -1,8 +1,8 @@
 import { groundY } from './terrain.js';
 
-// A small hooded figure with a cloak that moves as cloth: two chains of points
-// (the front and back edges of the cloak) that swing with walking and the wind.
-// The figure's warmth is an ember in the chest.
+// A villager bundled against the cold: a padded coat that swings as cloth, a fur-trimmed hood,
+// a knitted scarf, mittens and boots. Those who still have fire carry it as a coal in a small clay pot,
+// held in both hands. The player is a child, so is drawn a little smaller than the grown-ups.
 
 const GRAVITY = 620;
 const ICE = '#7d95a3';
@@ -29,6 +29,11 @@ function smooth(ctx, pts, start) {
   ctx.lineTo(last.x, last.y);
 }
 
+// Heights above the feet, at scale 1.
+const SHOULDER = 40;
+const HEM = 13;
+export const POT_HEIGHT = 27;
+
 export class Character {
   // floor(x) gives the y the feet stand on: the snow surface, or a cave floor.
   constructor(x, scale = 1, colors = {}, facing = 1, floor = groundY) {
@@ -38,14 +43,19 @@ export class Character {
     this.facing = facing;
     this.phase = 0;
     this.speed = 0;
-    this.c = { cloak: '#1c222b', fold: '#3a4757', rim: '#9db7c6', skin: '#c7ad98', hair: '#141318', legs: '#101318', ...colors };
-    this.back = this.chain(7, 6.8);
-    this.front = this.chain(6, 6.6);
+    this.lift = 0;
+    this.c = {
+      coat: '#3c4a5a', fold: '#56677a', fur: '#e6dccb', scarf: '#a24a2e', stripe: '#e9d7b8',
+      mitten: '#a24a2e', skin: '#d2b49c', hair: '#2a1e18', boots: '#2b211b', pot: '#8b4b2b', ...colors,
+    };
+    this.back = this.chain(5, 6.2);
+    this.front = this.chain(4, 6.6);
+    this.tail = this.chain(2, 5);
     for (let i = 0; i < 90; i++) this.update(1 / 60, x, facing, 0, i / 60);
   }
 
   chain(n, len) {
-    const top = this.floor(this.x) - 47 * this.s;
+    const top = this.floor(this.x) - SHOULDER * this.s;
     const pts = [];
     for (let i = 0; i <= n; i++) {
       const y = top + i * len * this.s;
@@ -55,7 +65,7 @@ export class Character {
   }
 
   bob() {
-    return Math.abs(Math.sin(this.phase)) * 1.4 * this.s * Math.min(1, this.speed / 50);
+    return Math.abs(Math.sin(this.phase)) * 1.3 * this.s * Math.min(1, this.speed / 50);
   }
 
   anchors() {
@@ -63,14 +73,17 @@ export class Character {
     return {
       g,
       b,
-      back: { x: this.x - f * 5 * s, y: g - 47 * s - b },
-      front: { x: this.x + f * 5.5 * s, y: g - 46 * s - b },
+      back: { x: this.x - f * 5.5 * s, y: g - SHOULDER * s - b },
+      front: { x: this.x + f * 5 * s, y: g - (SHOULDER - 1) * s - b },
+      neck: { x: this.x - f * 2 * s, y: g - (SHOULDER + 2) * s - b },
     };
   }
 
+  // Where the pot is: in front of the body, lifted toward the face while blowing on the coal.
   chest() {
     const a = this.anchors();
-    return { x: this.x + this.facing * 3 * this.s, y: a.g - 41 * this.s - a.b };
+    const s = this.s;
+    return { x: this.x + this.facing * (9 - 2 * this.lift) * s, y: a.g - (POT_HEIGHT + 12 * this.lift) * s - a.b };
   }
 
   update(dt, x, facing, wind, t) {
@@ -79,13 +92,15 @@ export class Character {
     this.speed = Math.abs(moved) / dt;
     this.x = x;
     if (facing) this.facing = facing;
-    this.phase += (Math.abs(moved) * 0.12) / this.s;
+    this.phase += (Math.abs(moved) * 0.13) / this.s;
     const a = this.anchors();
-    this.step(this.back, a.back, dt, wind, t, 1, true, -this.facing * 10 * this.s);
-    this.step(this.front, a.front, dt, wind, t, 0.55, false, this.facing * 6 * this.s);
+    const f = this.facing;
+    this.step(this.back, a.back, dt, wind, t, 0.7, true, -f * 6 * this.s);
+    this.step(this.front, a.front, dt, wind, t, 0.4, false, f * 4 * this.s);
+    // A short scarf end: it lifts in the wind but stays short.
+    this.step(this.tail, a.neck, dt, wind * 1.4, t, 1.2, true, -f * 7 * this.s);
   }
 
-  // flare: how far the hem sits out from the shoulder at rest, so the cloak hangs in an A shape.
   step(ch, anchor, dt, wind, t, flutter, isBack, flare) {
     const p = ch.pts;
     const s = this.s, f = this.facing;
@@ -115,7 +130,6 @@ export class Character {
       }
       for (let i = 1; i < p.length; i++) {
         const q = p[i];
-        // The back edge stays behind the body, the front edge stays roughly in front.
         if (isBack && f * (q.x - this.x) > 2 * s) q.x = this.x + f * 2 * s;
         if (!isBack && f * (q.x - this.x) < -3 * s) q.x = this.x - f * 3 * s;
         const floor = this.floor(q.x) - 0.5;
@@ -124,7 +138,8 @@ export class Character {
     }
   }
 
-  // o.frozen: 0..1 (1 = encased in ice, colors drained). o.glow: 0..1 warmth of the chest ember.
+  // o.frozen: 0..1 (1 = encased in ice, colors drained). o.glow: 0..1 how hot the coal is.
+  // o.pot: false for someone whose fire has gone out (they hug themselves instead). o.pulsing: blowing on the coal.
   draw(ctx, o) {
     const s = this.s, f = this.facing, x = this.x;
     const a = this.anchors();
@@ -132,142 +147,198 @@ export class Character {
     const fz = o.frozen || 0;
     const tint = (hex) => mix(hex, ICE, fz * 0.75);
     const walk = Math.min(1, this.speed / 45);
-
-    // Legs, mostly hidden by the cloak until it swings.
-    const hipY = g - 21 * s - a.b;
-    ctx.strokeStyle = tint(this.c.legs);
+    const hasPot = o.pot !== false;
+    const target = hasPot && o.pulsing ? 1 : 0;
+    this.lift += (target - this.lift) * Math.min(1, (o.dt || 1 / 30) * 8);
     ctx.lineCap = 'round';
-    ctx.lineWidth = 2.6 * s;
+    ctx.lineJoin = 'round';
+
+    // Boots and short legs below the coat.
+    const hipY = g - 18 * s - a.b;
     for (const off of [0, Math.PI]) {
       const sw = Math.sin(this.phase + off) * walk;
       const lift = Math.max(0, Math.cos(this.phase + off)) * walk * 3 * s;
-      const fx = x + sw * 7 * s;
+      const fx = x + sw * 6 * s;
       const fy = g - lift;
+      ctx.strokeStyle = tint(this.c.coat);
+      ctx.lineWidth = 3.4 * s;
       ctx.beginPath();
       ctx.moveTo(x, hipY);
-      ctx.quadraticCurveTo(x + f * 2 * s + sw * 3 * s, (hipY + fy) / 2, fx, fy);
-      ctx.lineTo(fx + f * 2.5 * s, fy);
+      ctx.lineTo(fx, fy - 3 * s);
       ctx.stroke();
+      ctx.fillStyle = tint(this.c.boots);
+      ctx.beginPath();
+      ctx.ellipse(fx + f * 1.2 * s, fy - 1.6 * s, 3 * s, 2.2 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    // The cloak.
+    // The padded coat.
     const B = this.back.pts, F = this.front.pts;
     const lb = B[B.length - 1], lf = F[F.length - 1];
-    const cloakPath = () => {
-      ctx.beginPath();
-      smooth(ctx, F, true);
-      ctx.quadraticCurveTo((lf.x + lb.x) / 2, Math.max(lf.y, lb.y) + 2.5 * s, lb.x, lb.y);
-      smooth(ctx, [...B].reverse(), false);
-      ctx.quadraticCurveTo(x, B[0].y - 4 * s, F[0].x, F[0].y);
-      ctx.closePath();
-    };
-    cloakPath();
+    ctx.beginPath();
+    smooth(ctx, F, true);
+    ctx.quadraticCurveTo((lf.x + lb.x) / 2, Math.max(lf.y, lb.y) + 2 * s, lb.x, lb.y);
+    smooth(ctx, [...B].reverse(), false);
+    ctx.quadraticCurveTo(x, B[0].y - 5 * s, F[0].x, F[0].y);
+    ctx.closePath();
     const grad = ctx.createLinearGradient(0, a.back.y, 0, g);
-    grad.addColorStop(0, tint(this.c.cloak));
-    grad.addColorStop(1, tint(mix(this.c.cloak, '#000000', 0.25)));
+    grad.addColorStop(0, tint(this.c.coat));
+    grad.addColorStop(1, tint(mix(this.c.coat, '#000000', 0.25)));
     ctx.fillStyle = grad;
     ctx.fill();
-    // The lining shows where the back edge lifts away in the wind.
+    // Quilted seams across the coat.
     ctx.save();
     ctx.clip();
-    if (o.glow > 0) {
-      const ch = this.chest();
-      const lg = ctx.createRadialGradient(ch.x, ch.y, 0, ch.x, ch.y, 16 * s);
-      lg.addColorStop(0, `rgba(255,175,90,${0.4 * o.glow})`);
-      lg.addColorStop(1, 'rgba(255,170,80,0)');
-      ctx.fillStyle = lg;
-      ctx.fillRect(ch.x - 40 * s, ch.y - 40 * s, 80 * s, 80 * s);
-    }
-    // Folds running down the cloth.
     ctx.strokeStyle = tint(this.c.fold);
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 0.9 * s;
-    for (const w of [0.35, 0.68]) {
-      const pts = [];
-      const n = Math.min(B.length, F.length);
-      for (let i = 1; i < n; i++) pts.push({ x: F[i].x + (B[i].x - F[i].x) * w, y: F[i].y + (B[i].y - F[i].y) * w });
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 0.8 * s;
+    for (let k = 1; k <= 3; k++) {
+      const y = a.back.y + k * 7 * s;
       ctx.beginPath();
-      smooth(ctx, pts, true);
+      ctx.moveTo(x - 14 * s, y + 1 * s);
+      ctx.quadraticCurveTo(x, y + 2.5 * s, x + 14 * s, y + 1 * s);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
     ctx.restore();
-    // Cold light from the snow catches the back edge of the cloak.
-    ctx.strokeStyle = tint(this.c.rim);
-    ctx.globalAlpha = 0.3 * (1 - fz);
-    ctx.lineWidth = 1 * s;
-    ctx.beginPath();
-    smooth(ctx, B.slice(1), true);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    // A thin edge where the hem catches light.
-    ctx.strokeStyle = tint(this.c.fold);
-    ctx.lineWidth = 1 * s;
+    // A fur hem.
+    ctx.strokeStyle = tint(this.c.fur);
+    ctx.lineWidth = 2.2 * s;
     ctx.beginPath();
     ctx.moveTo(lf.x, lf.y);
-    ctx.quadraticCurveTo((lf.x + lb.x) / 2, Math.max(lf.y, lb.y) + 2.5 * s, lb.x, lb.y);
+    ctx.quadraticCurveTo((lf.x + lb.x) / 2, Math.max(lf.y, lb.y) + 2 * s, lb.x, lb.y);
     ctx.stroke();
 
-    // Head under a hood with a soft point that trails behind.
-    const hx = x + f * 1 * s;
-    const hy = a.back.y - 8.5 * s;
-    const sway = Math.sin(o.t * 2.4 + this.x * 0.02) * 1.5 * s - f * Math.min(4, this.speed / 25) * s;
-    ctx.fillStyle = tint(this.c.cloak);
+    // The short scarf end, behind the head.
+    const T = this.tail.pts;
+    ctx.strokeStyle = tint(this.c.scarf);
+    ctx.lineWidth = 3.6 * s;
     ctx.beginPath();
-    ctx.moveTo(hx - f * 5 * s, hy - 4.5 * s);
-    ctx.quadraticCurveTo(hx - f * 11 * s + sway, hy - 1 * s, hx - f * 13 * s + sway, hy + 7 * s);
-    ctx.quadraticCurveTo(hx - f * 8 * s, hy + 4 * s, hx - f * 4 * s, hy + 6 * s);
-    ctx.closePath();
-    ctx.fill();
+    smooth(ctx, T, true);
+    ctx.stroke();
+
+    // Head under a fur-trimmed hood.
+    const hx = x + f * 1.5 * s;
+    const hy = a.back.y - 8 * s;
+    ctx.fillStyle = tint(this.c.coat);
     ctx.beginPath();
-    ctx.arc(hx - f * 1 * s, hy, 7.6 * s, 0, Math.PI * 2);
+    ctx.arc(hx - f * 1 * s, hy, 8.4 * s, 0, Math.PI * 2);
     ctx.fill();
-    // A face in profile, half in the hood's shadow: brow, nose and chin, no cartoon eye.
-    const fx = hx + f * 2.2 * s, fy = hy + 0.8 * s;
+    // Face in profile.
+    const fx = hx + f * 2.6 * s, fy = hy + 0.6 * s;
     ctx.fillStyle = tint(this.c.skin);
     ctx.beginPath();
-    ctx.moveTo(fx - f * 0.5 * s, fy - 3.8 * s);
-    ctx.quadraticCurveTo(fx + f * 2.4 * s, fy - 3.6 * s, fx + f * 2.6 * s, fy - 1.2 * s);
-    ctx.lineTo(fx + f * 3.5 * s, fy + 0.4 * s);
-    ctx.lineTo(fx + f * 2.6 * s, fy + 1 * s);
-    ctx.quadraticCurveTo(fx + f * 2.6 * s, fy + 3.4 * s, fx + f * 0.8 * s, fy + 3.8 * s);
-    ctx.quadraticCurveTo(fx - f * 1.2 * s, fy + 2 * s, fx - f * 0.5 * s, fy - 3.8 * s);
+    ctx.moveTo(fx - f * 0.6 * s, fy - 4 * s);
+    ctx.quadraticCurveTo(fx + f * 2.6 * s, fy - 3.8 * s, fx + f * 2.8 * s, fy - 1 * s);
+    ctx.lineTo(fx + f * 3.6 * s, fy + 0.6 * s);
+    ctx.lineTo(fx + f * 2.7 * s, fy + 1.1 * s);
+    ctx.quadraticCurveTo(fx + f * 2.6 * s, fy + 3.6 * s, fx + f * 0.8 * s, fy + 4 * s);
+    ctx.quadraticCurveTo(fx - f * 1.3 * s, fy + 2 * s, fx - f * 0.6 * s, fy - 4 * s);
     ctx.fill();
-    // Shadow from the hood across the top of the face.
-    ctx.fillStyle = tint(this.c.cloak);
-    ctx.globalAlpha = 0.55;
-    ctx.beginPath();
-    ctx.ellipse(fx + f * 0.6 * s, fy - 3.4 * s, 3.6 * s, 1.8 * s, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
     ctx.fillStyle = tint(this.c.hair);
     ctx.beginPath();
-    ctx.moveTo(fx - f * 0.8 * s, fy - 4 * s);
-    ctx.quadraticCurveTo(fx + f * 1.8 * s, fy - 4.6 * s, fx + f * 2.2 * s, fy - 2.4 * s);
+    ctx.moveTo(fx - f * 1 * s, fy - 4.4 * s);
+    ctx.quadraticCurveTo(fx + f * 2 * s, fy - 5 * s, fx + f * 2.4 * s, fy - 2.6 * s);
     ctx.quadraticCurveTo(fx + f * 0.6 * s, fy - 2.6 * s, fx - f * 0.6 * s, fy - 1 * s);
     ctx.closePath();
     ctx.fill();
+    // The fur trim framing the face.
+    ctx.strokeStyle = tint(this.c.fur);
+    ctx.lineWidth = 2.6 * s;
+    ctx.beginPath();
+    ctx.ellipse(hx + f * 2 * s, hy + 0.4 * s, 5.6 * s, 6.6 * s, 0, f > 0 ? -1.9 : Math.PI - 1.25, f > 0 ? 1.25 : Math.PI + 1.9);
+    ctx.stroke();
 
-    // The ember in the chest. Hands come to it while pulsing.
-    const ch = this.chest();
-    if (o.pulsing) {
-      ctx.fillStyle = tint(this.c.skin);
-      for (const dy of [-1.6, 1.8]) {
+    // The scarf wrapped at the neck, knitted in stripes.
+    const ny = a.back.y + 1 * s;
+    ctx.fillStyle = tint(this.c.scarf);
+    ctx.beginPath();
+    ctx.ellipse(x + f * 0.5 * s, ny, 7.4 * s, 3.4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = tint(this.c.stripe);
+    ctx.lineWidth = 0.9 * s;
+    for (const dx of [-3.5, 0, 3.5]) {
+      ctx.beginPath();
+      ctx.moveTo(x + (dx - 0.8) * s, ny - 2.6 * s);
+      ctx.lineTo(x + (dx + 0.8) * s, ny + 2.6 * s);
+      ctx.stroke();
+    }
+
+    const shoulder = { x: x + f * 2 * s, y: a.back.y + 4 * s };
+    if (!hasPot) {
+      // No fire: arms wrapped round the body against the cold.
+      ctx.strokeStyle = tint(this.c.coat);
+      ctx.lineWidth = 4.4 * s;
+      ctx.beginPath();
+      ctx.moveTo(shoulder.x, shoulder.y);
+      ctx.quadraticCurveTo(x + f * 7 * s, shoulder.y + 6 * s, x - f * 2 * s, shoulder.y + 9 * s);
+      ctx.stroke();
+      ctx.fillStyle = tint(this.c.mitten);
+      ctx.beginPath();
+      ctx.arc(x - f * 2.5 * s, shoulder.y + 9 * s, 2.4 * s, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    // Arms reaching round the pot, mittens on its sides.
+    const pot = this.chest();
+    ctx.strokeStyle = tint(this.c.coat);
+    ctx.lineWidth = 4.4 * s;
+    ctx.beginPath();
+    ctx.moveTo(shoulder.x, shoulder.y);
+    ctx.quadraticCurveTo(x + f * 3 * s, pot.y + 1 * s, pot.x - f * 3.5 * s, pot.y);
+    ctx.stroke();
+
+    // The clay pot. The coal shows through the holes and over the rim; its glow is the warmth.
+    const glow = Math.max(0, o.glow || 0);
+    const pw = 5 * s, ph = 4.6 * s;
+    ctx.fillStyle = tint(this.c.pot);
+    ctx.beginPath();
+    ctx.moveTo(pot.x - pw, pot.y - ph * 0.5);
+    ctx.quadraticCurveTo(pot.x - pw * 1.2, pot.y + ph, pot.x, pot.y + ph);
+    ctx.quadraticCurveTo(pot.x + pw * 1.2, pot.y + ph, pot.x + pw, pot.y - ph * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = tint(mix(this.c.pot, '#000000', 0.35));
+    ctx.lineWidth = 1.4 * s;
+    ctx.beginPath();
+    ctx.moveTo(pot.x - pw * 1.05, pot.y - ph * 0.5);
+    ctx.lineTo(pot.x + pw * 1.05, pot.y - ph * 0.5);
+    ctx.stroke();
+    if (glow > 0.01) {
+      const hot = Math.min(1, glow) * (1 + 0.35 * (o.beat || 0));
+      for (const [dx, dy] of [[-2.4, 1.4], [0, 2.4], [2.4, 1.4]]) {
+        ctx.fillStyle = `rgba(255,${Math.round(150 + 70 * hot)},80,${Math.min(1, 0.4 + 0.6 * hot)})`;
         ctx.beginPath();
-        ctx.arc(ch.x + f * 2 * s, ch.y + dy * s, 1.7 * s, 0, Math.PI * 2);
+        ctx.arc(pot.x + dx * s, pot.y + dy * s, 0.8 * s, 0, Math.PI * 2);
         ctx.fill();
       }
-    }
-    if (o.glow > 0.01) {
-      const r = (1 + 1.5 * o.glow) * s * (1 + 0.3 * (o.beat || 0));
-      const eg = ctx.createRadialGradient(ch.x, ch.y, 0, ch.x, ch.y, r * 2.2);
-      eg.addColorStop(0, `rgba(255,250,232,${Math.min(1, 0.4 + o.glow)})`);
-      eg.addColorStop(0.4, `rgba(255,196,110,${0.9 * o.glow + 0.1})`);
-      eg.addColorStop(1, 'rgba(255,140,60,0)');
+      const eg = ctx.createRadialGradient(pot.x, pot.y - ph * 0.6, 0, pot.x, pot.y - ph * 0.6, (3 + 4 * hot) * s);
+      eg.addColorStop(0, `rgba(255,248,225,${Math.min(1, 0.5 + 0.5 * hot)})`);
+      eg.addColorStop(0.45, `rgba(255,190,100,${0.85 * hot})`);
+      eg.addColorStop(1, 'rgba(255,130,50,0)');
       ctx.fillStyle = eg;
       ctx.beginPath();
-      ctx.arc(ch.x, ch.y, r * 2.2, 0, Math.PI * 2);
+      ctx.arc(pot.x, pot.y - ph * 0.6, (3 + 4 * hot) * s, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.fillStyle = tint(this.c.mitten);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(pot.x + side * pw * 1.05, pot.y + 0.5 * s, 2 * s, 2.6 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Blowing on the coal: small puffs of breath from the mouth to the pot.
+    if (this.lift > 0.5 && glow > 0) {
+      const mouth = { x: fx + f * 3.4 * s, y: fy + 1.6 * s };
+      for (let i = 0; i < 3; i++) {
+        const q = ((o.t || 0) * 1.6 + i / 3) % 1;
+        ctx.fillStyle = `rgba(235,242,248,${0.45 * (1 - q) * this.lift})`;
+        ctx.beginPath();
+        ctx.arc(mouth.x + (pot.x - mouth.x) * q, mouth.y + (pot.y - ph - mouth.y) * q, (1 + 1.6 * q) * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
