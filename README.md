@@ -2,18 +2,6 @@
 
 A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a frozen world, thaws (melts) what it finds and gathers companions until the whole world warms.
 
-## Download and play
-
-- Download: https://github.com/Ultraviolet01/Thaw/raw/main/download/Thaw.zip
-- Unzip it and double-click `index.html`. No install or server needed.
-- To rebuild the zip after changing the code: `python3 tools/build.py`
-
-## Play from source
-
-- Serve the folder over HTTP (the game uses ES modules, so opening `index.html` straight from disk will not work):
-  - `python3 -m http.server 8000`, then open http://localhost:8000
-- On itch.io: zip the folder contents with `index.html` at the root and upload as an HTML game.
-
 ## Controls
 
 - Walk: Left and Right arrows, A and D, or left stick
