@@ -1,7 +1,8 @@
 import { VIEW_W, VIEW_H, PULSE, THRESHOLDS } from './config.js';
 import { groundY } from './terrain.js';
 import { Character } from './character.js';
-import { COMPANION_SCALE, PLAYER_SCALE } from './game.js';
+import { COMPANION_SCALE, PLAYER_SCALE, INTRO_LOCK } from './game.js';
+import { PEOPLE, FLOWERS, LINES, TREE_X } from './prologue.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -30,6 +31,10 @@ const FW = VIEW_W * FROST_SCALE;
 const FH = VIEW_H * FROST_SCALE;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const smooth01 = (v) => {
+  const k = clamp01(v);
+  return k * k * (3 - 2 * k);
+};
 
 function rgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -263,6 +268,8 @@ export class Renderer {
 
   draw(game, dt) {
     this.frame++;
+    if (game.mode === 'title') return this.drawGate(game);
+    if (game.mode === 'prologue') return this.drawPrologue(game, dt);
     const w = game.displayWarmth();
     const look = warmthLook(w);
 
@@ -311,8 +318,13 @@ export class Renderer {
       c.fillStyle = `rgba(0,0,0,${lo})`;
       c.fillRect(0, 0, VIEW_W, VIEW_H);
     }
-    if (game.mode !== 'title') this.drawBar(c, game);
-    if (game.mode === 'title' || game.titleFade > 0) this.drawTitleText(c, game, game.time);
+    // Out of black as the first stage begins.
+    if (game.intro && game.intro.t < 1.6) {
+      c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
+      c.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+    if (!(game.intro && game.intro.t < INTRO_LOCK)) this.drawBar(c, game);
+    if (game.intro && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
     if (game.mode === 'stageEnd') this.drawStageEndText(c, game);
     if (game.audio.muted) {
@@ -714,10 +726,6 @@ export class Renderer {
     const dim = 1 - game.lightsOutAlpha();
     glow(s, e.x, e.y, game.glowRadius(), '255,200,140', 0.28 * dim);
     glow(s, e.x, groundY(e.x), game.glowRadius() * 0.7, '255,190,120', 0.18 * dim);
-    if (game.mode === 'title' || game.titleFade > 0) {
-      const a = game.mode === 'title' ? 1 : game.titleFade;
-      glow(s, game.camX + VIEW_W / 2, VIEW_H / 2 - 40, 420, '255,170,80', 0.35 * a);
-    }
     s.restore();
   }
 
@@ -742,7 +750,24 @@ export class Renderer {
       this.figures[c.objId].draw(s, { glow: 0.55 * dim, t, beat: game.pulsing ? game.beatEnvelope() : 0 });
     }
     this.player.update(dt, e.x, e.facing, wind, t);
-    const glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
+    let glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
+    const it = game.intro;
+    if (it && it.t < INTRO_LOCK) {
+      // Rising out of the snow: hidden below the snow line, lifting up, the ember brightening as it comes.
+      const k = smooth01((it.t - 0.4) / 2.2);
+      glow *= 0.25 + 0.75 * smooth01((it.t - 1.4) / 1.2);
+      s.save();
+      s.beginPath();
+      s.moveTo(e.x - 120, -10);
+      s.lineTo(e.x + 120, -10);
+      for (let x = e.x + 120; x >= e.x - 120; x -= 10) s.lineTo(x, groundY(x) + 2);
+      s.closePath();
+      s.clip();
+      s.translate(0, (1 - k) * 100);
+      this.player.draw(s, { glow, t, pulsing: false, beat: 0 });
+      s.restore();
+      return;
+    }
     this.player.draw(s, { glow, t, pulsing: game.pulsing, beat: game.beatEnvelope() });
   }
 
@@ -811,7 +836,8 @@ export class Renderer {
 
     let breath = 0;
     for (const r of game.rings) if (r.strong) breath = Math.max(breath, 1 - (r.t / PULSE.ringSeconds) * 1.4);
-    const er = w < THRESHOLDS.heavy ? 14 + 18 * (w / THRESHOLDS.heavy) : 40 + 75 * (w / 100);
+    let er = w < THRESHOLDS.heavy ? 14 + 18 * (w / THRESHOLDS.heavy) : 40 + 75 * (w / 100);
+    if (game.intro) er *= smooth01((game.intro.t - 2.0) / 1.4);
     out.push({ x: e.x, y: e.y, R: er + 34 * Math.max(0, breath), seed: 1, a: (1 - game.lightsOutAlpha()) * fadeAll });
 
     // As the cold takes hold, frost creeps back over what was thawed.
@@ -907,7 +933,7 @@ export class Renderer {
       if (live(h) && Math.abs(e.x - h.x) < 420 && (!nearest || Math.abs(e.x - h.x) < Math.abs(e.x - nearest.x))) nearest = h;
     }
     game.level.hints.forEach((h, i) => {
-      const target = game.mode === 'title' || h !== nearest ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
+      const target = (game.intro && game.titleFade > 0.05) || h !== nearest ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
       this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * 2);
       if (this.hintAlpha[i] < 0.01) return;
       tm.globalAlpha = 0.9 * this.hintAlpha[i];
@@ -917,11 +943,10 @@ export class Renderer {
 
     // Title and closing line, in screen space.
     tm.textAlign = 'center';
-    if (game.mode === 'title' || game.titleFade > 0) {
-      const a = game.mode === 'title' ? 1 : game.titleFade;
-      tm.globalAlpha = a;
+    if (game.intro && game.titleFade > 0) {
+      tm.globalAlpha = game.titleFade;
       tm.font = `190px ${HAND}`;
-      this.writeReveal(tm, 'thaw', VIEW_W / 2, 215, Math.min(1, t / 1.6));
+      this.writeReveal(tm, 'thaw', VIEW_W / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
     }
     if (game.mode === 'stageEnd') {
       const T = game.stageEndT;
@@ -1114,18 +1139,326 @@ export class Renderer {
     c.globalAlpha = 1;
   }
 
-  drawTitleText(c, game, t) {
-    const a = game.mode === 'title' ? 1 : game.titleFade;
+  drawTitleText(c, game) {
+    const a = game.titleFade;
+    const t = game.intro.t;
     c.textAlign = 'center';
     c.font = `italic 300 21px ${SERIF}`;
-    c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 1.2) / 1)})`;
+    c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 4.2) / 1)})`;
     c.fillText('a small warmth in a frozen world', VIEW_W / 2, 270);
-    c.font = `300 16px ${SERIF}`;
-    c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 2) / 1) * (0.55 + 0.45 * Math.sin(t * 2.5))})`;
-    c.fillText('press any key to wake', VIEW_W / 2, 320);
     c.font = `300 14px ${SERIF}`;
-    c.fillStyle = `rgba(22,40,50,${0.75 * a})`;
-    c.fillText('move: arrows or WASD   ·   pulse: hold space   ·   pause: esc   ·   mute: M', VIEW_W / 2, VIEW_H - 40);
+    c.fillStyle = `rgba(22,40,50,${0.75 * a * clamp01((t - 5) / 1)})`;
+    c.fillText('walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M', VIEW_W / 2, VIEW_H - 40);
+    c.font = `italic 300 13px ${SERIF}`;
+    c.fillStyle = `rgba(22,40,50,${0.6 * a * clamp01((t - 5) / 1)})`;
+    c.fillText('music: thatgamejam #02 theme by Jason Grace', VIEW_W / 2, VIEW_H - 62);
+  }
+
+  // A cleared-area mask for frost growing in from the edges. Each pixel freezes once fr passes its threshold:
+  // low near the edges, high in the middle, broken up by noise so the front is ragged, not a circle.
+  growthMask(fr) {
+    if (!this.growth) {
+      const g = new Float32Array(FW * FH);
+      const r = rng(29);
+      const blobs = Array.from({ length: 40 }, () => ({ x: r() * FW, y: r() * FH, rad: 20 + r() * 90, w: r() - 0.5 }));
+      for (let y = 0; y < FH; y++) {
+        for (let x = 0; x < FW; x++) {
+          const edge = Math.min(x, FW - x, y * 1.4, (FH - y) * 1.1) / (FH * 0.55);
+          let n = 0;
+          for (const b of blobs) {
+            const d = Math.hypot(x - b.x, y - b.y);
+            if (d < b.rad) n += b.w * (1 - d / b.rad);
+          }
+          n += 0.12 * Math.sin(x * 0.09 + Math.sin(y * 0.05) * 3) * Math.sin(y * 0.07 + x * 0.013);
+          g[y * FW + x] = Math.min(1, Math.max(0, edge * 0.8 + n * 0.35 + 0.05));
+        }
+      }
+      this.growth = g;
+      this.growthImg = this.mctx.createImageData(FW, FH);
+    }
+    const g = this.growth;
+    const d = this.growthImg.data;
+    for (let i = 0; i < g.length; i++) {
+      // Cleared (no frost yet) where the threshold is still above fr, with a soft edge.
+      const a = Math.max(0, Math.min(1, (g[i] - fr) / 0.12));
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255;
+      d[i * 4 + 3] = a * 255;
+    }
+    return this.growthImg;
+  }
+
+  // ---------- Before play ----------
+
+  // A dark screen asking for a key: browsers only allow sound after the player has pressed something.
+  drawGate(game) {
+    const c = this.ctx;
+    const t = game.time;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    c.textAlign = 'center';
+    c.font = `300 17px ${SERIF}`;
+    c.fillStyle = `rgba(214,226,234,${clamp01(t / 1.5) * (0.55 + 0.35 * Math.sin(t * 2))})`;
+    c.fillText('press any key to begin', VIEW_W / 2, VIEW_H / 2);
+    c.font = `italic 300 14px ${SERIF}`;
+    c.fillStyle = `rgba(160,178,190,${0.6 * clamp01((t - 0.8) / 1.5)})`;
+    c.fillText('best with sound on', VIEW_W / 2, VIEW_H / 2 + 34);
+  }
+
+  // The prologue: the world before the cold, then the cold, drawn with the same pieces as the game.
+  drawPrologue(game, dt) {
+    const P = game.prologue;
+    const t = P.t;
+    const cold = P.cold();
+    const cam = P.cam();
+    if (!this.prologueFigs) {
+      this.prologueFigs = PEOPLE.map((p) => new Character(p.x, p.player ? PLAYER_SCALE : 1.38, p.player ? {} : { cloak: p.cloak, fold: p.fold }, p.facing));
+    }
+    const s = this.sctx;
+
+    // Sky: an amber evening before, the frozen night after.
+    const sky = s.createLinearGradient(0, 0, 0, VIEW_H * 0.75);
+    sky.addColorStop(0, mix('#1c2a31', C.skyTop, cold));
+    sky.addColorStop(1, mix('#d9a265', C.skyBottom, cold));
+    s.fillStyle = sky;
+    s.fillRect(0, 0, VIEW_W, VIEW_H);
+    glow(s, 380 - cam * 0.15, 455, 440, '255,196,120', 0.42 * (1 - cold));
+    const ridge = (par, color, fn) => {
+      s.fillStyle = color;
+      s.beginPath();
+      s.moveTo(0, VIEW_H);
+      for (let x = 0; x <= VIEW_W + 12; x += 12) s.lineTo(x, fn(x + cam * par));
+      s.lineTo(VIEW_W, VIEW_H);
+      s.closePath();
+      s.fill();
+    };
+    ridge(0.2, mix('#8f7556', C.ridges[0], cold), (x) => 400 - Math.abs(Math.sin(x * 0.0028)) * 105 - Math.sin(x * 0.011) * 12);
+    ridge(0.5, mix('#6d5940', C.ridges[2], cold), (x) => 490 - Math.abs(Math.sin(x * 0.0051 + 1)) * 50 - Math.sin(x * 0.019) * 6);
+
+    s.save();
+    s.translate(-cam, 0);
+    // Golden grass that the snow covers.
+    const x0 = cam - 40, x1 = cam + VIEW_W + 40;
+    s.beginPath();
+    s.moveTo(x0, VIEW_H);
+    for (let x = x0; x <= x1; x += 10) s.lineTo(x, groundY(x));
+    s.lineTo(x1, VIEW_H);
+    s.closePath();
+    const gg = s.createLinearGradient(0, 560, 0, VIEW_H);
+    gg.addColorStop(0, mix('#b8924f', '#93aab6', cold));
+    gg.addColorStop(1, mix('#5a4628', '#3f5561', cold));
+    s.fillStyle = gg;
+    s.fill();
+    if (cold < 0.95) {
+      s.strokeStyle = `rgba(214,182,104,${0.65 * (1 - cold)})`;
+      s.lineWidth = 1;
+      for (let x = Math.floor(x0 / 7) * 7; x < x1; x += 7) {
+        const h = 6 + (hash(41, x) + 1) * 5;
+        const lean = hash(43, x) * 3 + Math.sin(t * 1.3 + x * 0.05) * 1.5 - 4 * P.wind();
+        s.beginPath();
+        s.moveTo(x, groundY(x) + 2);
+        s.lineTo(x + lean, groundY(x) - h);
+        s.stroke();
+      }
+    }
+    s.strokeStyle = mix('#d9bd7c', '#e1eef5', cold);
+    s.lineWidth = 1.6;
+    s.beginPath();
+    for (let x = x0; x <= x1; x += 10) (x === x0 ? s.moveTo : s.lineTo).call(s, x, groundY(x));
+    s.stroke();
+
+    // Small cold-country flowers; the frost takes them with everything else.
+    for (const f of FLOWERS) {
+      const gy = groundY(f.x);
+      const sway = Math.sin(t * 1.6 + f.seed) * 2 * (1 - cold) - 3 * P.wind() * (1 - cold);
+      s.strokeStyle = mix('#5c6b3a', '#8aa0ac', cold);
+      s.lineWidth = 1.2;
+      s.beginPath();
+      s.moveTo(f.x, gy + 1);
+      s.quadraticCurveTo(f.x + sway * 0.4, gy - 8, f.x + sway, gy - 15);
+      s.stroke();
+      s.fillStyle = mix(f.yellow ? '#f1cf62' : '#f4efe4', '#cfdde5', cold);
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + f.seed;
+        s.beginPath();
+        s.arc(f.x + sway + Math.cos(a) * 2.6, gy - 15 + Math.sin(a) * 2.6, 2, 0, Math.PI * 2);
+        s.fill();
+      }
+      s.fillStyle = mix('#d98b2b', '#b8c8d0', cold);
+      s.beginPath();
+      s.arc(f.x + sway, gy - 15, 1.4, 0, Math.PI * 2);
+      s.fill();
+    }
+
+    // The great tree and the fire beneath it.
+    this.drawPine(s, TREE_X, groundY(TREE_X) + 6, 430, 4242, P.tree());
+    const fireK = P.fire();
+    if (fireK > 0.02) {
+      const fb = groundY(TREE_X) + 4;
+      s.save();
+      s.translate(TREE_X, fb);
+      s.scale(fireK, fireK);
+      s.translate(-TREE_X, -fb);
+      this.drawFire(s, { x: TREE_X }, t);
+      s.restore();
+    }
+
+    // The people. Their fires go out one by one; the last one, apart from the rest, is you.
+    const wind = -70 - 520 * P.wind();
+    PEOPLE.forEach((p, i) => {
+      const fig = this.prologueFigs[i];
+      fig.update(dt, p.x, p.facing, wind, t);
+      fig.draw(s, { frozen: P.frozenOf(p), glow: P.glowOf(p), t });
+    });
+
+    s.save();
+    s.globalCompositeOperation = 'lighter';
+    glow(s, TREE_X, groundY(TREE_X) - 30, 1 + 380 * fireK, '255,150,60', 0.36 * fireK);
+    glow(s, TREE_X, groundY(TREE_X) - 210, 320, '255,190,110', 0.24 * P.tree());
+    PEOPLE.forEach((p, i) => {
+      const ch = this.prologueFigs[i].chest();
+      glow(s, ch.x, ch.y, 52, '255,200,140', 0.32 * P.glowOf(p));
+    });
+    s.restore();
+    s.restore();
+
+    // Snow arrives with the cold, driven by the wind.
+    const count = Math.floor(this.snow.length * cold);
+    for (let i = 0; i < this.snow.length; i++) {
+      const f = this.snow[i];
+      f.y += f.vy * dt * (1 + cold);
+      f.x += (f.vx - 220 * P.wind()) * dt;
+      if (f.y > VIEW_H) f.y -= VIEW_H;
+      if (i >= count) continue;
+      const x = (((f.x - cam * f.par) % VIEW_W) + VIEW_W) % VIEW_W;
+      s.fillStyle = `rgba(225,238,248,${0.22 * f.s})`;
+      s.fillRect(x, f.y, f.s, f.s);
+    }
+
+    // The frost grows in from the edges until it covers everything; two of the lines are written into it.
+    const fr = P.frost();
+    const player = this.prologueFigs[PEOPLE.length - 1].chest();
+    const px = player.x - cam;
+    const py = player.y;
+    if (fr > 0) {
+      this.smctx.filter = 'saturate(0.35) brightness(1.25)';
+      this.smctx.drawImage(this.scene, 0, 0, SMALL_W, SMALL_H);
+      this.smctx.filter = 'none';
+      const f = this.fctx;
+      f.setTransform(1, 0, 0, 1, 0, 0);
+      f.globalCompositeOperation = 'source-over';
+      f.clearRect(0, 0, FW, FH);
+      f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+      f.drawImage(this.small, 0, 0, VIEW_W, VIEW_H);
+      f.fillStyle = 'rgba(178,202,214,0.42)';
+      f.fillRect(0, 0, VIEW_W, VIEW_H);
+      f.globalAlpha = 0.85;
+      const off = -(((cam % TILE_W) + TILE_W) % TILE_W);
+      for (let x = off; x < VIEW_W; x += TILE_W) f.drawImage(this.crystals, x, 0);
+      f.globalAlpha = 1;
+
+      const m = this.mctx;
+      m.setTransform(1, 0, 0, 1, 0, 0);
+      m.clearRect(0, 0, FW, FH);
+      m.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+      // Frost creeps in unevenly: it starts at the edges and reaches the middle last.
+      if (fr < 1) {
+        m.setTransform(1, 0, 0, 1, 0, 0);
+        m.putImageData(this.growthMask(fr), 0, 0);
+        m.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+      }
+      // The one glow the frost cannot close over.
+      const g = P.glowOf(PEOPLE[PEOPLE.length - 1]);
+      m.fillStyle = '#fff';
+      m.globalAlpha = 0.9;
+      blobPath(m, px, py, (10 + 10 * g) * P.zoom(), 5, t);
+      m.fill();
+      m.globalAlpha = 1;
+      m.font = `64px ${HAND}`;
+      m.textAlign = 'center';
+      for (const l of LINES) {
+        if (!l.frost) continue;
+        const { p, a } = P.line(l);
+        if (p <= 0 || a <= 0) continue;
+        m.globalAlpha = a;
+        this.writeReveal(m, l.text, VIEW_W / 2, 190, p);
+      }
+      m.globalAlpha = 1;
+      f.setTransform(1, 0, 0, 1, 0, 0);
+      f.globalCompositeOperation = 'destination-out';
+      f.drawImage(this.mask, 0, 0);
+      f.globalCompositeOperation = 'source-over';
+    }
+
+    const c = this.ctx;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, VIEW_W, VIEW_H);
+    c.clip();
+    // The world zooms toward the last glow; the frost on the glass does not.
+    const z = P.zoom();
+    c.save();
+    c.translate(px, py);
+    c.scale(z, z);
+    c.translate(-px, -py);
+    c.filter = `saturate(${(1 - 0.85 * cold).toFixed(2)})`;
+    c.drawImage(this.scene, 0, 0);
+    c.filter = 'none';
+    c.restore();
+    if (fr > 0) {
+      c.globalAlpha = 0.95;
+      c.drawImage(this.frost, 0, 0, VIEW_W, VIEW_H);
+      c.globalAlpha = 1;
+    }
+    // Darkness closing in on everything but the last glow.
+    const d = P.dark();
+    if (d > 0) {
+      const dg = c.createRadialGradient(px, py, 20, px, py, 560);
+      dg.addColorStop(0, `rgba(0,0,0,${d * 0.35})`);
+      dg.addColorStop(1, `rgba(0,0,0,${d})`);
+      c.fillStyle = dg;
+      c.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+    // The last glow shows as warm light through the frost, not as a hole in it.
+    if (fr > 0.3) {
+      const g = P.glowOf(PEOPLE[PEOPLE.length - 1]);
+      const pulse = 0.85 + 0.15 * Math.sin(t * 3.2);
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      glow(c, px, py, (70 + 40 * g) * z * pulse, '255,170,90', 0.32 * g * clamp01((fr - 0.3) / 0.3));
+      glow(c, px, py, 14 * z, '255,230,190', 0.7 * g);
+      c.restore();
+    }
+    // The first line is written in warm light, before there is any frost.
+    const first = LINES[0];
+    const l0 = P.line(first);
+    if (l0.p > 0 && l0.a > 0) {
+      c.font = `56px ${HAND}`;
+      c.textAlign = 'center';
+      c.fillStyle = `rgba(255,226,178,${0.92 * l0.a})`;
+      this.writeReveal(c, first.text, VIEW_W / 2, 170, l0.p);
+    }
+    c.globalAlpha = 0.06;
+    c.fillStyle = this.grainPatterns[Math.floor(this.frame / 2) % 3];
+    c.fillRect(0, 0, VIEW_W, VIEW_H);
+    c.globalAlpha = 1;
+    const b = P.black();
+    if (b > 0) {
+      c.fillStyle = `rgba(0,0,0,${b})`;
+      c.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+    if (t > 3 && t < 55) {
+      c.font = `300 13px ${SERIF}`;
+      c.textAlign = 'right';
+      c.fillStyle = `rgba(200,212,222,${0.35 * clamp01((t - 3) / 2)})`;
+      c.fillText('esc to skip', VIEW_W - 28, VIEW_H - 24);
+    }
+    c.restore();
   }
 
   drawPause(c) {

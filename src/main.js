@@ -4,6 +4,13 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { level1 } from './level1.js';
 
+// Load the fonts up front so the first written line never starts in a fallback face.
+if (document.fonts) {
+  document.fonts.load("64px 'Reenie Beanie'");
+  document.fonts.load('300 16px Spectral');
+  document.fonts.load('italic 300 16px Spectral');
+}
+
 const canvas = document.getElementById('game');
 const input = new Input();
 const audio = new GameAudio();

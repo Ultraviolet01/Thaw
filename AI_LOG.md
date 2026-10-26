@@ -9,6 +9,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 | 2026-10-26 | Claude (Claude Code) | Player character (hooded figure with cloth cloak and chest ember), walking movement, snowy forested backgrounds, rocks and grass | Built to the team's direction (a character like Gris, without copying her), reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Lucky ember pickups (random warmth pickups), wider pulse reach for small figures | Requested by the team after play-testing, reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Stage 1 fork (lantern or wanderer, the cold takes the other), one frost hint at a time | Team's call to make choices visible in play, no menus; reviewed by the team |
+| 2026-10-26 | Claude (Claude Code) | Prologue "The last fire": timeline, scene, frost growth, stage intro (rise from the snow) | Story lines and structure agreed with the team; reviewed by the team |
 | 2026-10-26 | Claude | Game design document drafting | Drafted from the team's direction and edited by the team |
 
 ## Not AI-generated so far
@@ -16,3 +17,4 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 - No art files: all visuals are drawn in code
 - No audio files: all sound is synthesized in code
 - Fonts are existing Google Fonts (Reenie Beanie, Spectral), not generated
+- Theme music is the jam's official track by Jason Grace, used unmodified, not generated

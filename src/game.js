@@ -1,7 +1,8 @@
 import {
   VIEW_W, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
 } from './config.js';
-import { groundY, objectBounds } from './terrain.js';
+import { groundY, objectBounds, setTerrain } from './terrain.js';
+import { Prologue, prologueGround } from './prologue.js';
 
 export const PLAYER_SCALE = 1.5;
 export const COMPANION_SCALE = 1.25;
@@ -10,13 +11,19 @@ const CHEST = 41;
 export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
 const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// Seconds of the stage intro before the player can move.
+export const INTRO_LOCK = 3.2;
 const between = ([a, b]) => a + Math.random() * (b - a);
 
 export class Game {
   constructor(level, audio) {
     this.level = level;
     this.audio = audio;
-    this.mode = 'title'; // title | play | paused | stageEnd
+    // title (press any key, so the browser lets sound play) | prologue | play | paused | stageEnd
+    this.mode = 'title';
+    this.prologue = null;
+    // The figure rising out of the snow as the first stage begins.
+    this.intro = null;
     this.time = 0;
     this.titleFade = 1;
     this.reset();
@@ -65,16 +72,29 @@ export class Game {
 
   update(dt, input) {
     this.time += dt;
-    if (this.mode !== 'title') this.titleFade = Math.max(0, this.titleFade - dt * 1.5);
-
     if (this.mode === 'title') {
       if (input.anyPressed) {
         this.audio.start();
-        this.mode = 'play';
-        this.holdLock = true;
+        this.mode = 'prologue';
+        this.prologue = new Prologue();
+        setTerrain(prologueGround);
+        this.audio.playTheme();
       }
       return;
     }
+
+    if (this.mode === 'prologue') {
+      if (input.wasPressed('KeyM')) this.audio.toggleMute();
+      this.prologue.update(dt, this.audio);
+      if (input.pausePressed) {
+        this.prologue.skip();
+        this.audio.fadeTheme();
+      }
+      if (this.prologue.done) this.endPrologue();
+      return;
+    }
+
+    this.updateIntro(dt, input);
 
     if (input.wasPressed('KeyM')) this.audio.toggleMute();
 
@@ -101,6 +121,36 @@ export class Game {
     }
 
     this.simulate(dt, input);
+  }
+
+  endPrologue() {
+    setTerrain(this.level.ground);
+    this.audio.setPrologueMusic(0);
+    this.audio.setWind(0);
+    this.audio.resetLayers();
+    this.prologue = null;
+    this.mode = 'play';
+    this.intro = { t: 0, pulsed: false };
+    this.titleFade = 1;
+    this.holdLock = true;
+  }
+
+  // The first seconds of the stage: out of black, the figure rises from the snow, its ember pulses once and
+  // melts the first patch of frost, and "thaw" is written in the frost. Then the player has control.
+  updateIntro(dt, input) {
+    const it = this.intro;
+    if (!it) return;
+    it.t += dt;
+    if (!it.pulsed && it.t > 2.2) {
+      it.pulsed = true;
+      const e = this.ember;
+      this.rings.push({ x: e.x, y: e.y, t: 0, r: this.pulseRadius(), strong: true });
+      this.audio.pulse();
+    }
+    // The title stays until the player starts walking (or a while passes), then fades.
+    if (it.t > INTRO_LOCK && (Math.abs(input.moveX) > 0.1 || it.t > 12)) it.fading = true;
+    if (it.fading) this.titleFade = Math.max(0, this.titleFade - dt * 0.6);
+    if (this.titleFade <= 0) this.intro = null;
   }
 
   beatInterval() {
@@ -139,7 +189,7 @@ export class Game {
   simulate(dt, input) {
     const e = this.ember;
     const L = this.level;
-    const controllable = this.mode === 'play' && !this.lightsOut;
+    const controllable = this.mode === 'play' && !this.lightsOut && !(this.intro && this.intro.t < INTRO_LOCK);
 
     // Pulse: hold to pulse on every heartbeat. The first pulse fires on press.
     if (this.holdLock && !input.pulseHeld) this.holdLock = false;

@@ -10,6 +10,16 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Mute: M
 - Restart: R
 
+## Prologue: "The last fire"
+
+- Plays after "press any key" (browsers only allow sound after a key press); Esc skips it
+- 60 seconds, the length of the jam's theme track, with its moments on the track's shape
+- The world before the cold: warm evening light, the great tree, people gathered with embers in their chests, small cold-country flowers
+- The cold comes: color drains, frost creeps in from the edges, the fires go out one by one, the tree goes dark
+- Three lines: "everyone used to carry a little fire" (written in light), "then the cold came" and "except one" (written into the frost)
+- One glow is left. Out of the dark, the figure rises from the snow in Stage 1, its first pulse melts the first patch of frost, and "thaw" is written in the frost. No cut, no menu: the first key press just walks
+- Music: thatgamejam #02 theme by Jason Grace, played unmodified from `audio/thatgamejam02_theme.wav`
+
 ## The character
 
 - A small hooded figure walking through the snow, with an ember glowing in the chest
@@ -52,6 +62,7 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 ## Code layout
 
 - `src/main.js`: boot and frame loop
+- `src/prologue.js`: the prologue's timeline, people, flowers and lines
 - `src/game.js`: game state, warmth, pulse, thawing, companions, lights out
 - `src/render.js`: Canvas drawing, the frost layer and melt mask, warmth effects, warmth bar, screens
 - `src/audio.js`: synthesized audio (heartbeat, wind, hums, music layers)

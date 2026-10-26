@@ -4,6 +4,8 @@
 const PIANO = [440, 523.25, 659.25, 587.33, 523.25, 659.25, 783.99, 659.25];
 const BELLS = [1318.51, 1567.98, 1174.66, 1046.5];
 const MASTER_LEVEL = 0.9;
+// The jam's theme by Jason Grace, played exactly as supplied. The rules allow it only unmodified.
+const THEME_SRC = 'audio/thatgamejam02_theme.wav';
 
 export class GameAudio {
   constructor() {
@@ -62,6 +64,8 @@ export class GameAudio {
     band.frequency.value = 380;
     band.Q.value = 0.6;
     const g = this.gainNode(0.05, this.sfxBus);
+    this.windGain = g;
+    this.windBand = band;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.08;
     const depth = ctx.createGain();
@@ -155,6 +159,30 @@ export class GameAudio {
     g.connect(this.sfxBus);
     src.start(t, Math.random());
     src.stop(t + dur + 0.05);
+  }
+
+  // 0 = a breath of wind, 1 = a gale: louder and higher.
+  setWind(amount) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const k = Math.max(0, Math.min(1, amount));
+    if (Math.abs((this.windLevel ?? -1) - k) < 0.01) return;
+    this.windLevel = k;
+    this.windGain.gain.setTargetAtTime(0.05 + 0.3 * k, now, 0.4);
+    this.windBand.frequency.setTargetAtTime(380 + 900 * k, now, 0.5);
+  }
+
+  // The prologue's warm music: the first three layers together, faded by k. Gameplay takes the layers back after.
+  setPrologueMusic(k) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.layers.forEach((l, i) => {
+      const target = i < 3 ? l.peak * k : 0;
+      if (Math.abs(target - l.target) > 0.001 || (target === 0 && l.target !== 0)) {
+        l.target = target;
+        l.gain.gain.setTargetAtTime(target, now, 0.8);
+      }
+    });
   }
 
   onBeat(beat) {
@@ -314,8 +342,38 @@ export class GameAudio {
     }
   }
 
+  // Played with a plain audio element, which also works when index.html is opened straight from disk.
+  // If the file is missing, the prologue falls back to the game's own music.
+  playTheme() {
+    if (this.theme) return;
+    const el = new Audio(THEME_SRC);
+    el.volume = 0.85;
+    el.muted = this.muted;
+    el.addEventListener('error', () => { this.themeFailed = true; });
+    el.addEventListener('ended', () => { this.themeEnded = true; });
+    el.play().catch(() => { this.themeFailed = true; });
+    this.theme = el;
+  }
+
+  themePlaying() {
+    return !!this.theme && !this.themeFailed && !this.themeEnded;
+  }
+
+  // Skipping the prologue: let the theme fade out instead of stopping dead.
+  fadeTheme() {
+    const el = this.theme;
+    if (!el || this.themeEnded) return;
+    const step = () => {
+      el.volume = Math.max(0, el.volume - 0.06);
+      if (el.volume > 0) setTimeout(step, 50);
+      else { el.pause(); this.themeEnded = true; }
+    };
+    step();
+  }
+
   toggleMute() {
     this.muted = !this.muted;
+    if (this.theme) this.theme.muted = this.muted;
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_LEVEL, this.ctx.currentTime, 0.05);
   }
 }

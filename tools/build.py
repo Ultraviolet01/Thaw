@@ -11,7 +11,9 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Dependency order: each module comes after the ones it imports.
-ORDER = ['config', 'terrain', 'level1', 'input', 'audio', 'character', 'game', 'render', 'main']
+ORDER = ['config', 'terrain', 'level1', 'prologue', 'input', 'audio', 'character', 'game', 'render', 'main']
+# Files shipped next to index.html, byte for byte. The theme track must stay unmodified.
+ASSETS = ['audio/thatgamejam02_theme.wav']
 
 PLAY_NOTES = """THAW
 
@@ -27,6 +29,8 @@ Controls
 - Restart: R
 
 Best in Chrome, Edge or Firefox.
+
+Music: thatgamejam #02 theme by Jason Grace, used unmodified.
 """
 
 
@@ -60,6 +64,9 @@ def main():
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('Thaw/index.html', bundle())
         z.writestr('Thaw/HOW-TO-PLAY.txt', PLAY_NOTES)
+        for a in ASSETS:
+            # Stored, not compressed, so the file inside the zip is the original.
+            z.write(ROOT / a, f'Thaw/{a}', compress_type=zipfile.ZIP_STORED)
     print(f'wrote {out.relative_to(ROOT)} ({out.stat().st_size // 1024} KB)')
 
 
