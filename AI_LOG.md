@@ -2,9 +2,15 @@
 
 The jam requires a clear AI disclosure in the game description. Keep this log current so the disclosure is accurate.
 
+## Disclosure for the game page
+
+> This game contains AI-generated content. The idea, story and game design are by Ultraviolet. The code, including everything drawn on screen, was written by an AI (Claude) from that design and direction, then tested and tuned by Ultraviolet. All music and sound are human-made: the jam theme by Jason Grace, plus CC0 music and recordings from OpenGameArt and Freesound (full credits in audio/CREDITS.md). No audio is AI-generated.
+
+## Log
+
 | Date | Tool | What it produced | How it was used |
 | --- | --- | --- | --- |
-| 2026-10-26 | Claude (Claude Code) | Stage 1 prototype code: game loop, warmth system, pulse, thawing, companions, rendering, synthesized audio, input | Generated from the team's design doc, then reviewed and tuned by the team |
+| 2026-10-26 | Claude (Claude Code) | Stage 1 prototype code: game loop, warmth system, pulse, thawing, companions, rendering, synthesized audio (since replaced by human-made recordings), input | Generated from the team's design doc, then reviewed and tuned by the team |
 | 2026-10-26 | Claude (Claude Code) | Frosted-glass rendering pass: frost layer, melt mask, crystal texture, depth layers, ember tail, film grain | Built from the art direction the team chose (frosted glass), reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Player character (hooded figure with cloth cloak and chest ember), walking movement, snowy forested backgrounds, rocks and grass | Built to the team's direction (a character like Gris, without copying her), reviewed by the team |
 | 2026-10-26 | Claude (Claude Code) | Lucky ember pickups (random warmth pickups), wider pulse reach for small figures | Requested by the team after play-testing, reviewed by the team |
@@ -16,9 +22,10 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 
 ## Not AI-generated so far
 
-The visuals have no image files: everything on screen is drawn by the AI-written code in the table above.
-
+- The idea, story and game design are by Ultraviolet
 - Every sound effect (wind, ice cracking, footsteps, heartbeat, her breath on the coal, melting, refreezing, the ember, lights out, the hums and the chime, the fire) is a human-made CC0 recording from Freesound, credited in audio/CREDITS.md. They were only cut, leveled, faded and filtered
 - All music during play is human-made CC0 music from OpenGameArt (Long Winter by Indieteur, Esther by Kistol, November Snow by cynicmusic), credited in audio/CREDITS.md. It was only re-encoded and leveled. No sound in the game is synthesized or AI-generated
 - Fonts are existing Google Fonts (Reenie Beanie, Spectral), not generated
 - Theme music is the jam's official track by Jason Grace, used unmodified, not generated
+
+The visuals have no image files: everything on screen is drawn by the AI-written code in the log above.
