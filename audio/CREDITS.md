@@ -2,7 +2,7 @@
 
 The jam theme belongs to its composer. Every other recording is human-made and released under CC0 (public domain); credit is not required, but given gladly.
 
-The recordings were only trimmed and leveled for the game: a 90-second stretch of each wind, six single cracks cut from the ice recording, two crunches cut from the footstep, and 60 seconds of the fire.
+The recordings were only trimmed and leveled for the game: a 90-second stretch of each wind, six single cracks cut from the ice recording, two crunches cut from the footstep, 60 seconds of the fire, and four single beats cut from the heartbeat.
 
 - **Theme:** thatgamejam #02 theme by Jason Grace. Used unmodified, only inside this jam entry, as the jam rules require.
 - **Wind (ambient):** "Winter wind whistling through window.mp3" by audible-edge, Freesound, 2009. https://freesound.org/people/audible-edge/sounds/69512/
@@ -15,3 +15,5 @@ The recordings were only trimmed and leveled for the game: a 90-second stretch o
   - Files: `sfx/snow-step-1.mp3` and `sfx/snow-step-2.mp3`, the two crunches in the one step.
 - **Fire at the stage end:** "Fire crackling in fireplace" by Davor, Freesound, 2017. https://freesound.org/people/Davor/sounds/382616/
   - File: `sfx/fire.mp3`
+- **Heartbeat:** "SLOW HEARTBEAT" by daandraait, Freesound, 2014. https://freesound.org/people/daandraait/sounds/249716/
+  - Files: `sfx/heartbeat-1.mp3` to `sfx/heartbeat-4.mp3`, single beats from the one recording.

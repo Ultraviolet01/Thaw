@@ -14,6 +14,8 @@ const STORM_SRC = 'audio/sfx/wind-storm.mp3';
 const CRACK_SRC = [1, 2, 3, 4, 5, 6].map((i) => `audio/sfx/ice-crack-${i}.mp3`);
 // Boots in snow: two crunches cut from one recorded step.
 const STEP_SRC = ['audio/sfx/snow-step-1.mp3', 'audio/sfx/snow-step-2.mp3'];
+// A recorded heartbeat: four single beats (lub and dub) cut from one slow recording.
+const HEART_SRC = [1, 2, 3, 4].map((i) => `audio/sfx/heartbeat-${i}.mp3`);
 // The fire at the end of each stage.
 const FIRE_SRC = 'audio/sfx/fire.mp3';
 
@@ -265,28 +267,12 @@ export class GameAudio {
   }
 
   heartbeat(warmth) {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.02;
-    const vol = warmth < 35 ? 0.5 : 0.35;
-    this.thump(t, 62, vol);
-    this.thump(t + 0.2, 52, vol * 0.6);
+    if (this.muted) return;
+    const el = new Audio(HEART_SRC[Math.floor(Math.random() * HEART_SRC.length)]);
+    el.volume = warmth < 35 ? 0.8 : 0.55;
+    el.play().catch(() => {});
   }
 
-  thump(t, freq, vol) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(freq, t);
-    o.frequency.exponentialRampToValueAtTime(freq * 0.6, t + 0.15);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    o.connect(g);
-    g.connect(this.sfxBus);
-    o.start(t);
-    o.stop(t + 0.3);
-  }
 
   pulse() {
     if (!this.ctx) return;
