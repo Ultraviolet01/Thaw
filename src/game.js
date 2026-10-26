@@ -206,6 +206,8 @@ export class Game {
       if (o.state !== 'frozen') continue;
       const b = o.bounds;
       if (Math.hypot(e.x - b.cx, e.y - b.cy) > r + b.reach) continue;
+      // At a fork, whatever you crack first is your choice: the other side no longer takes your warmth.
+      if (o.fork && o.progress === 0 && this.objects.some((x) => x !== o && x.fork === o.fork && x.state === 'frozen' && x.progress > 0)) continue;
       o.progress++;
       o.hit = 1;
       this.audio.crack();
