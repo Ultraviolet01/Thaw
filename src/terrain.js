@@ -9,7 +9,7 @@ export function groundY(x) {
 const SIZES = {
   tree: { w: 132, h: 170, dx: 0 },
   lantern: { w: 56, h: 130, dx: 8 },
-  wanderer: { w: 44, h: 62, dx: 0 },
+  wanderer: { w: 50, h: 80, dx: 0 },
 };
 
 // World-space box around a frozen object, used for pulse reach and the ice shell.

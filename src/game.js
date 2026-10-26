@@ -3,6 +3,11 @@ import {
 } from './config.js';
 import { groundY, objectBounds } from './terrain.js';
 
+export const PLAYER_SCALE = 1.5;
+export const COMPANION_SCALE = 1.25;
+// The ember sits this far above the feet, at scale 1.
+const CHEST = 41;
+export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
 const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -18,7 +23,7 @@ export class Game {
 
   reset() {
     const L = this.level;
-    this.ember = { x: L.spawn.x, y: L.spawn.y, vx: 0, vy: 0, facing: 1, warmth: WARMTH.max };
+    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max };
     this.checkpoint = { ...L.spawn };
     this.objects = L.objects.map((o, i) => ({
       ...o,
@@ -139,33 +144,20 @@ export class Game {
     }
     if (!wantPulse) this.pulsing = false;
 
-    // Movement. The ember cannot move while pulsing.
-    let ax = 0, ay = 0;
+    // Walking. The figure cannot move while pulsing. e.x is the feet, e.y the ember in the chest.
+    let ax = 0;
     if (controllable && !this.pulsing) {
-      ax = input.moveX;
-      ay = input.moveY;
-      const len = Math.hypot(ax, ay);
-      if (len > 1) { ax /= len; ay /= len; }
-      if (len > 0.1) this.hintFlags.moved = true;
+      ax = Math.max(-1, Math.min(1, input.moveX));
+      if (Math.abs(ax) > 0.1) this.hintFlags.moved = true;
     }
     e.vx += ax * EMBER.accel * dt;
-    e.vy += ay * EMBER.accel * dt;
-    const damp = Math.exp(-(this.pulsing ? EMBER.pulseDamping : EMBER.damping) * dt);
-    e.vx *= damp;
-    e.vy *= damp;
-    const speed = Math.hypot(e.vx, e.vy);
-    if (speed > EMBER.maxSpeed) {
-      e.vx *= EMBER.maxSpeed / speed;
-      e.vy *= EMBER.maxSpeed / speed;
-    }
-    if (Math.abs(e.vx) > 10) e.facing = Math.sign(e.vx);
+    e.vx *= Math.exp(-(this.pulsing ? EMBER.pulseDamping : EMBER.damping) * dt);
+    e.vx = clamp(e.vx, -EMBER.maxSpeed, EMBER.maxSpeed);
+    if (Math.abs(e.vx) > 8) e.facing = Math.sign(e.vx);
     e.x += e.vx * dt;
-    e.y += e.vy * dt + Math.sin(this.time * 1.3) * 4 * dt;
-    const floor = groundY(e.x) - EMBER.radius - 8;
     if (e.x < 20) { e.x = 20; e.vx = 0; }
     if (e.x > L.width - 20) { e.x = L.width - 20; e.vx = 0; }
-    if (e.y < EMBER.ceiling) { e.y = EMBER.ceiling; e.vy = 0; }
-    if (e.y > floor) { e.y = floor; e.vy = Math.min(0, e.vy); }
+    e.y = groundY(e.x) - CHEST_HEIGHT;
 
     // Heartbeat clock.
     this.beatTimer += dt;
@@ -290,19 +282,20 @@ export class Game {
     this.audio.setHum(o.id, 0, 0);
     if (o.type === 'wanderer') {
       o.gone = true;
-      this.companions.push({ x: o.x, y: groundY(o.x) - 30, phase: Math.random() * 6 });
+      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.id });
     }
   }
 
   updateCompanions(dt) {
     const e = this.ember;
+    // Companions walk a few steps behind.
     this.companions.forEach((c, i) => {
-      const tx = e.x - e.facing * 36 * (i + 1);
-      const ty = e.y - 8 + Math.sin(this.time * 1.6 + c.phase) * 8;
-      const k = Math.min(1, dt * 2.2);
-      c.x += (tx - c.x) * k;
-      c.y += (ty - c.y) * k;
-      c.y = Math.min(c.y, groundY(c.x) - 14);
+      const tx = e.x - e.facing * 44 * (i + 1);
+      const step = (tx - c.x) * Math.min(1, dt * 1.8);
+      if (Math.abs(tx - c.x) > 6) c.facing = Math.sign(tx - c.x);
+      else c.facing = e.facing;
+      c.x += clamp(step, -EMBER.maxSpeed * 1.2 * dt, EMBER.maxSpeed * 1.2 * dt);
+      c.y = groundY(c.x) - CHEST * COMPANION_SCALE;
     });
   }
 
@@ -381,13 +374,12 @@ export class Game {
       const e = this.ember;
       lo.respawned = true;
       e.x = this.checkpoint.x;
-      e.y = this.checkpoint.y;
+      e.y = groundY(e.x) - CHEST_HEIGHT;
       e.vx = 0;
-      e.vy = 0;
       e.warmth = WARMTH.max;
       this.companions.forEach((c, i) => {
-        c.x = e.x - 36 * (i + 1);
-        c.y = e.y;
+        c.x = e.x - 44 * (i + 1);
+        c.y = groundY(c.x) - CHEST * COMPANION_SCALE;
       });
       this.camX = clamp(e.x - VIEW_W * 0.42, 0, this.level.width - VIEW_W);
       this.flashed.clear();

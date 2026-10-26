@@ -14,7 +14,7 @@ export const level1 = {
   mist: [{ x0: 1750, x1: 2450 }],
   fire: { x: 4050 },
   hints: [
-    { x: 300, text: 'arrows to drift', until: 'moved' },
+    { x: 300, text: 'arrows to walk', until: 'moved' },
     { x: 650, text: 'hold space to pulse', until: 'pulsed' },
     { x: 1300, text: 'every pulse costs warmth' },
     { x: 2750, text: 'someone is frozen here' },

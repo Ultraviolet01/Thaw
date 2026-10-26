@@ -10,11 +10,18 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 
 ## Controls
 
-- Move: Arrow keys, WASD or left stick
+- Walk: Left and Right arrows, A and D, or left stick
 - Pulse: hold Space or A (you cannot move while pulsing)
 - Pause: Esc, P or Start
 - Mute: M
 - Restart: R
+
+## The character
+
+- A small hooded figure walking through the snow, with an ember glowing in the chest
+- The ember is the warmth: it dims as warmth drops and pulses with the heartbeat
+- The cloak moves as cloth, swinging with each step and the wind
+- Frozen wanderers are hooded figures too; once thawed they walk with you
 
 ## Art direction: frosted glass
 
@@ -24,7 +31,9 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - Each pulse sweeps a ring of clarity through the frost, which closes back over
 - Hints, the title and closing lines are written into the frost, like a finger on a cold window
 - Frozen things show only as blurred shapes and faint glints through the frost
-- Depth: four background ridges, the play layer, and dark drifts and branches in the foreground
+- Depth: four snowy ridges with forests along their crests, the play layer, and drifts and branches in the foreground
+- Snow is the brightest thing on screen, so figures and trees read as dark shapes against it
+- Rocks and dry grass poke through the snow
 - Film grain on top so the picture never looks too clean
 - Fonts: Reenie Beanie (handwriting) and Spectral (small text), both from Google Fonts under the Open Font License
 
@@ -48,6 +57,7 @@ A slow, atmospheric survival game for thatgamejam #02. A small ember crosses a f
 - `src/game.js`: game state, warmth, pulse, thawing, companions, lights out
 - `src/render.js`: Canvas drawing, the frost layer and melt mask, warmth effects, warmth bar, screens
 - `src/audio.js`: synthesized audio (heartbeat, wind, hums, music layers)
+- `src/character.js`: the hooded figure and its cloth cloak, used for the player and companions
 - `src/input.js`: keyboard and gamepad
 - `src/level1.js`: Stage 1 layout
 - `src/config.js`: tuning numbers

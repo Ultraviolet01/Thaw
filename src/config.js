@@ -18,13 +18,12 @@ export const WARMTH = {
   companionRange: 220,
 };
 
+// The player figure: walks on the snow, no jumping.
 export const EMBER = {
-  accel: 420,
-  maxSpeed: 115,
-  damping: 2.4,
-  pulseDamping: 9,
-  radius: 10,
-  ceiling: 110,
+  accel: 520,
+  maxSpeed: 92,
+  damping: 4.5,
+  pulseDamping: 12,
 };
 
 export const PULSE = {

@@ -1,5 +1,7 @@
 import { VIEW_W, VIEW_H, PULSE, THRESHOLDS } from './config.js';
 import { groundY } from './terrain.js';
+import { Character } from './character.js';
+import { COMPANION_SCALE, PLAYER_SCALE } from './game.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -8,11 +10,13 @@ const HAND = "'Reenie Beanie', 'Segoe Print', cursive";
 const SERIF = "Spectral, Georgia, serif";
 
 const C = {
-  skyTop: '#0d1f28',
-  skyBottom: '#1f3d48',
-  ridges: ['#2a4855', '#213c48', '#1a323d', '#142832'],
+  skyTop: '#08151c',
+  skyBottom: '#2a4652',
+  // Snowy ridges: the far ones pale and hazy, nearer ones deeper. Each has a darker forest along its crest.
+  ridges: ['#5a7380', '#4a6471', '#3c5562', '#2f4855'],
+  forests: ['#4a636f', '#3a5260', '#2c4350', '#1f3440'],
   snowRim: '#7f9fae',
-  near: '#03070a',
+  near: '#2a3c47',
   frost: '#7fb3e0',
   amber: '#f2b25c',
 };
@@ -110,7 +114,7 @@ function warmthLook(w) {
   }
   // The frost itself thickens as warmth drops.
   const cold = clamp01((THRESHOLDS.frost - w) / THRESHOLDS.frost);
-  return { sat, blur, frostA: 0.86 + 0.14 * cold, tintA: 0.28 + 0.25 * cold, crystalA: 0.65 + 0.35 * cold };
+  return { sat, blur, frostA: 0.86 + 0.14 * cold, tintA: 0.34 + 0.22 * cold, crystalA: 0.65 + 0.35 * cold };
 }
 
 export class Renderer {
@@ -125,11 +129,19 @@ export class Renderer {
     this.fctx = this.frost.getContext('2d');
     this.mask = canvas(FW, FH);
     this.mctx = this.mask.getContext('2d');
+    // Writing gets its own mask so it stays sharp while melt edges are feathered.
+    this.textMask = canvas(FW, FH);
+    this.tctx = this.textMask.getContext('2d');
     this.crystals = this.makeCrystals();
     this.grain = [0, 1, 2].map((i) => this.makeGrain(i));
     this.grainPatterns = this.grain.map((g) => this.ctx.createPattern(g, 'repeat'));
     this.frame = 0;
-    this.trail = [];
+    this.player = new Character(level.spawn.x, PLAYER_SCALE);
+    // Each wanderer keeps its figure from frozen to companion, so the thaw is one continuous body.
+    this.figures = {};
+    level.objects.forEach((o, i) => {
+      if (o.type === 'wanderer') this.figures[i] = new Character(o.x, COMPANION_SCALE, { cloak: '#3b3230', fold: '#5d4d46' }, -1);
+    });
 
     const r = rng(42);
     this.stars = Array.from({ length: 110 }, () => ({
@@ -210,16 +222,23 @@ export class Renderer {
         py = ny;
       }
     };
-    for (let c = 0; c < 26; c++) {
-      const cx = r() * TILE_W, cy = r() * VIEW_H;
-      const base = r() * Math.PI * 2;
-      const n = 4 + Math.floor(r() * 6);
+    // Frost grows thickest from the bottom and top of the window and thins toward the middle.
+    const edgeY = () => {
+      const u = r();
+      return u < 0.45 ? VIEW_H - Math.pow(r(), 1.8) * VIEW_H * 0.45 : u < 0.75 ? Math.pow(r(), 1.8) * VIEW_H * 0.35 : r() * VIEW_H;
+    };
+    for (let c = 0; c < 60; c++) {
+      const cx = r() * TILE_W, cy = edgeY();
+      const big = r() < 0.18;
+      // Fronds lean away from the nearest edge, the way frost grows inward.
+      const base = (cy > VIEW_H / 2 ? -Math.PI / 2 : Math.PI / 2) + (r() - 0.5) * 2.2;
+      const n = big ? 5 + Math.floor(r() * 5) : 2 + Math.floor(r() * 4);
       for (let k = 0; k < n; k++) {
-        const a = base + (r() - 0.5) * 1.6;
-        const len = 25 + r() * 70;
-        const alpha = 0.12 + r() * 0.14;
+        const a = base + (r() - 0.5) * 1.8;
+        const len = big ? 60 + r() * 120 : 8 + r() * 40;
+        const alpha = (big ? 0.06 : 0.14) + r() * (big ? 0.06 : 0.12);
         const seed = Math.floor(r() * 1e9);
-        wrap((ox) => frond(cx + ox, cy, a, len, alpha, 2, rng(seed)));
+        wrap((ox) => frond(cx + ox, cy, a, len, alpha, big ? 1 : 2, rng(seed)));
       }
     }
     return cv;
@@ -243,7 +262,6 @@ export class Renderer {
     this.frame++;
     const w = game.displayWarmth();
     const look = warmthLook(w);
-    this.updateTrail(game);
 
     this.drawScene(game, dt);
     const holes = this.holes(game);
@@ -315,17 +333,16 @@ export class Renderer {
     this.drawGround(s, cam);
     for (const o of game.objects) this.drawObject(s, o, t);
     this.drawFire(s, game.fire, t);
+    this.drawFigures(s, game, dt, t);
     this.drawLights(s, game, t);
     this.drawMist(s, t);
-    this.drawCompanions(s, game);
-    this.drawEmber(s, game, t);
     s.restore();
     this.drawSnow(s, cam, dt, t);
     this.drawNear(s, cam);
   }
 
   drawSky(s, cam, t) {
-    const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.75);
+    const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.7);
     g.addColorStop(0, C.skyTop);
     g.addColorStop(1, C.skyBottom);
     s.fillStyle = g;
@@ -336,28 +353,58 @@ export class Renderer {
       s.fillStyle = `rgba(215,232,245,${a})`;
       s.fillRect(x, st.y, st.s, st.s);
     }
-    // Four ridges, each nearer one darker and sharper: atmospheric depth.
     const ridges = [
-      [0.12, (x) => 330 - Math.abs(Math.sin(x * 0.0024)) * 120 - Math.sin(x * 0.009) * 16],
-      [0.25, (x) => 395 - Math.abs(Math.sin(x * 0.0033 + 0.7)) * 95 - Math.sin(x * 0.013) * 10],
-      [0.45, (x) => 455 - Math.abs(Math.sin(x * 0.0046 + 2)) * 65 - Math.sin(x * 0.019) * 7],
-      [0.7, (x) => 515 - Math.abs(Math.sin(x * 0.006 + 1)) * 42 - Math.sin(x * 0.027) * 5],
+      [0.12, 9, (x) => 330 - Math.abs(Math.sin(x * 0.0024)) * 120 - Math.sin(x * 0.009) * 16],
+      [0.25, 12, (x) => 395 - Math.abs(Math.sin(x * 0.0033 + 0.7)) * 95 - Math.sin(x * 0.013) * 10],
+      [0.45, 16, (x) => 455 - Math.abs(Math.sin(x * 0.0046 + 2)) * 65 - Math.sin(x * 0.019) * 7],
+      [0.7, 22, (x) => 515 - Math.abs(Math.sin(x * 0.006 + 1)) * 42 - Math.sin(x * 0.027) * 5],
     ];
-    ridges.forEach(([par, fn], i) => {
+    ridges.forEach(([par, treeH, fn], i) => {
+      const off = cam * par;
       s.fillStyle = C.ridges[i];
       s.beginPath();
       s.moveTo(0, VIEW_H);
-      for (let x = 0; x <= VIEW_W + 12; x += 12) s.lineTo(x, fn(x + cam * par));
+      for (let x = 0; x <= VIEW_W + 12; x += 12) s.lineTo(x, fn(x + off));
       s.lineTo(VIEW_W, VIEW_H);
       s.closePath();
       s.fill();
-      // A pale snow line on each ridge top.
-      s.strokeStyle = `rgba(170,200,215,${0.1 - i * 0.015})`;
-      s.lineWidth = 1.5;
-      s.stroke();
+      // Forest patches along the crest: small pines, smaller and hazier with distance.
+      s.fillStyle = C.forests[i];
+      const step = 3 + i * 1.5;
+      const start = Math.floor(off / step) * step;
+      for (let wx = start; wx < off + VIEW_W + step; wx += step) {
+        const k = Math.floor(wx / step);
+        const patch = Math.sin(k * 0.05 + i * 3) + Math.sin(k * 0.013 + i) * 0.8;
+        if (patch < 0.25) continue;
+        const sx = wx - off;
+        const h = treeH * (0.5 + 0.5 * (hash(i + 31, k) + 1) / 2) * Math.min(1, (patch - 0.25) * 2);
+        const base = fn(wx) + 3 + i;
+        const half = h * 0.28;
+        s.beginPath();
+        s.moveTo(sx - half, base);
+        s.lineTo(sx, base - h);
+        s.lineTo(sx + half, base);
+        s.closePath();
+        s.fill();
+      }
+      // The body of the forest below the tree tops.
+      s.beginPath();
+      for (let x = 0; x <= VIEW_W + 12; x += 12) {
+        if (x === 0) s.moveTo(x, fn(x + off) + 2 + i);
+        else s.lineTo(x, fn(x + off) + 2 + i);
+      }
+      for (let x = VIEW_W + 12; x >= 0; x -= 12) {
+        const k = Math.floor((x + off) / step);
+        const patch = Math.sin(k * 0.05 + i * 3) + Math.sin(k * 0.013 + i) * 0.8;
+        const depth = patch < 0.25 ? 0 : Math.min(1, (patch - 0.25) * 2) * treeH * 0.6;
+        s.lineTo(x, fn(x + off) + 2 + i + depth);
+      }
+      s.closePath();
+      s.fill();
     });
   }
 
+  // Snow is the brightest thing in a snow scene, so the ground is pale and the figures read dark against it.
   drawGround(s, cam) {
     const x0 = cam - 40;
     const x1 = cam + VIEW_W + 40;
@@ -373,29 +420,61 @@ export class Renderer {
     for (let x = x0; x <= x1; x += 10) s.lineTo(x, groundY(x));
     s.lineTo(x1, VIEW_H);
     s.closePath();
-    const g = s.createLinearGradient(0, 540, 0, VIEW_H);
-    g.addColorStop(0, '#2a4553');
-    g.addColorStop(0.3, '#1a2f3a');
-    g.addColorStop(1, '#0c171d');
+    const g = s.createLinearGradient(0, 545, 0, VIEW_H);
+    g.addColorStop(0, '#93aab6');
+    g.addColorStop(0.35, '#6f8794');
+    g.addColorStop(1, '#3f5561');
     s.fillStyle = g;
     s.fill();
     top();
-    s.strokeStyle = 'rgba(120,160,180,0.18)';
-    s.lineWidth = 9;
-    s.stroke();
-    top();
-    s.strokeStyle = C.snowRim;
+    s.strokeStyle = 'rgba(225,238,245,0.55)';
     s.lineWidth = 2;
     s.stroke();
-    // Wind-cut ridges in the snow.
-    s.strokeStyle = 'rgba(110,150,170,0.16)';
-    s.lineWidth = 1;
-    for (let x = Math.floor(x0 / 90) * 90; x < x1; x += 90) {
-      const y = groundY(x) + 14 + (hash(3, x) + 1) * 10;
+
+    // Wind-cut ridges and soft hollows in the snow.
+    for (let x = Math.floor(x0 / 70) * 70; x < x1; x += 70) {
+      const y = groundY(x) + 12 + (hash(3, x) + 1) * 16;
+      s.strokeStyle = `rgba(60,85,100,${0.18 + 0.12 * hash(9, x)})`;
+      s.lineWidth = 1.2;
       s.beginPath();
       s.moveTo(x, y);
-      s.quadraticCurveTo(x + 30, y - 4, x + 60 + hash(5, x) * 15, y + 1);
+      s.quadraticCurveTo(x + 30, y - 4, x + 55 + hash(5, x) * 18, y + 1);
       s.stroke();
+      s.strokeStyle = 'rgba(230,242,248,0.22)';
+      s.beginPath();
+      s.moveTo(x + 2, y - 1.5);
+      s.quadraticCurveTo(x + 30, y - 5.5, x + 50 + hash(5, x) * 18, y - 0.5);
+      s.stroke();
+    }
+
+    // Rocks and dry grass poking through the snow.
+    for (let x = Math.floor(x0 / 110) * 110; x < x1; x += 110) {
+      const h = hash(17, x);
+      const px = x + hash(19, x) * 40;
+      const gy = groundY(px);
+      if (h > 0.35) {
+        const rw = 8 + (h - 0.35) * 26;
+        s.fillStyle = '#1d2a32';
+        s.beginPath();
+        s.ellipse(px, gy + 2, rw, rw * 0.45, 0, Math.PI, 0);
+        s.fill();
+        s.fillStyle = 'rgba(220,234,242,0.85)';
+        s.beginPath();
+        s.ellipse(px - rw * 0.15, gy + 2 - rw * 0.38, rw * 0.7, rw * 0.16, 0, Math.PI, 0);
+        s.fill();
+      } else if (h < -0.2) {
+        s.strokeStyle = 'rgba(40,50,48,0.8)';
+        s.lineWidth = 1;
+        for (let k = 0; k < 7; k++) {
+          const bx = px + (k - 3) * 2.2;
+          const lean = hash(23, x + k) * 5;
+          const bh = 6 + (hash(29, x + k) + 1) * 6;
+          s.beginPath();
+          s.moveTo(bx, gy + 1);
+          s.quadraticCurveTo(bx + lean * 0.3, gy - bh * 0.6, bx + lean, gy - bh);
+          s.stroke();
+        }
+      }
     }
   }
 
@@ -477,23 +556,10 @@ export class Renderer {
     s.fill();
   }
 
+  // A frozen wanderer: the same figure as a companion, still and drained of color.
   drawWanderer(s, o, warm, t) {
-    const x = o.x;
-    const b = groundY(x) + 6;
-    const sway = warm > 0 ? Math.sin(t * 2) * 2 : 0;
-    // A small hooded figure, curled against the cold.
-    s.fillStyle = mix('#29404d', '#e8c48a', warm);
-    s.beginPath();
-    s.moveTo(x - 13 + sway, b);
-    s.quadraticCurveTo(x - 15 + sway, b - 30, x - 2 + sway, b - 52);
-    s.quadraticCurveTo(x + 3 + sway, b - 58, x + 6 + sway, b - 50);
-    s.quadraticCurveTo(x + 15 + sway, b - 30, x + 13 + sway, b);
-    s.closePath();
-    s.fill();
-    s.fillStyle = mix('#0e1a21', '#5a3a1c', warm);
-    s.beginPath();
-    s.ellipse(x + 2 + sway, b - 42, 4.5, 5.5, 0.2, 0, Math.PI * 2);
-    s.fill();
+    const fig = this.figures[o.id];
+    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0.5 * warm, t });
   }
 
   drawFire(s, f, t) {
@@ -556,7 +622,8 @@ export class Renderer {
     for (const c of game.companions) glow(s, c.x, c.y, 46, '255,215,160', 0.3);
     const e = game.ember;
     const dim = 1 - game.lightsOutAlpha();
-    glow(s, e.x, e.y, game.glowRadius(), '255,170,80', 0.45 * dim);
+    glow(s, e.x, e.y, game.glowRadius(), '255,200,140', 0.28 * dim);
+    glow(s, e.x, groundY(e.x), game.glowRadius() * 0.7, '255,190,120', 0.18 * dim);
     if (game.mode === 'title' || game.titleFade > 0) {
       const a = game.mode === 'title' ? 1 : game.titleFade;
       glow(s, game.camX + VIEW_W / 2, VIEW_H / 2 - 40, 420, '255,170,80', 0.35 * a);
@@ -570,62 +637,23 @@ export class Renderer {
     });
   }
 
-  drawCompanions(s, game) {
-    for (const c of game.companions) {
-      s.fillStyle = '#ffe6bf';
-      s.beginPath();
-      s.arc(c.x, c.y, 4.5, 0, Math.PI * 2);
-      s.fill();
-    }
-  }
-
-  updateTrail(game) {
-    const e = game.ember;
-    const last = this.trail[this.trail.length - 1];
-    if (last && Math.hypot(e.x - last.x, e.y - last.y) > 200) this.trail = [];
-    this.trail.push({ x: e.x, y: e.y });
-    const max = Math.round(6 + 22 * (game.displayWarmth() / 100));
-    while (this.trail.length > max) this.trail.shift();
-  }
-
-  // The ember: a flame with a tail. The tail is long when warm and shrinks as warmth runs out.
-  drawEmber(s, game, t) {
+  // The player and companions: hooded figures with an ember in the chest.
+  drawFigures(s, game, dt, t) {
     const e = game.ember;
     const w = game.displayWarmth();
     const dim = 1 - game.lightsOutAlpha();
-    if (dim <= 0) return;
-    const r = w < THRESHOLDS.heavy ? 2.5 + 3.5 * (w / THRESHOLDS.heavy) : 6 + 3 * (w / 100);
-    s.save();
-    s.globalCompositeOperation = 'lighter';
-    const n = this.trail.length;
-    for (let i = 0; i < n - 1; i++) {
-      const p = this.trail[i];
-      const k = (i + 1) / n;
-      const wob = Math.sin(t * 8 + i * 0.7) * (1 - k) * 3;
-      s.fillStyle = `rgba(${Math.round(255)},${Math.round(110 + 90 * k)},${Math.round(40 + 60 * k)},${0.28 * k * dim})`;
-      s.beginPath();
-      s.arc(p.x, p.y + wob, r * (0.35 + 0.65 * k), 0, Math.PI * 2);
-      s.fill();
+    const wind = -70;
+    if (Math.abs(this.player.x - e.x) > 200) this.player = new Character(e.x, PLAYER_SCALE, {}, e.facing);
+    for (const c of game.companions) {
+      const fig = this.figures[c.objId];
+      if (!fig) continue;
+      if (Math.abs(fig.x - c.x) > 200) this.figures[c.objId] = new Character(c.x, COMPANION_SCALE, fig.c, c.facing);
+      this.figures[c.objId].update(dt, c.x, c.facing, wind, t);
+      this.figures[c.objId].draw(s, { glow: 0.55 * dim, t, beat: game.pulsing ? game.beatEnvelope() : 0 });
     }
-    s.restore();
-
-    const speed = Math.hypot(e.vx, e.vy);
-    const stretch = 1 + Math.min(0.5, speed / 260);
-    const ang = Math.atan2(e.vy, e.vx);
-    const flick = 1 + 0.07 * Math.sin(t * 11) + 0.04 * Math.sin(t * 23);
-    s.save();
-    s.translate(e.x, e.y);
-    s.rotate(ang);
-    s.scale(stretch, 1 / Math.sqrt(stretch));
-    const g = s.createRadialGradient(0, 0, 0, 0, 0, r * flick);
-    g.addColorStop(0, `rgba(255,250,235,${dim})`);
-    g.addColorStop(0.55, `rgba(255,205,120,${dim})`);
-    g.addColorStop(1, `rgba(255,140,60,${dim})`);
-    s.fillStyle = g;
-    s.beginPath();
-    s.arc(0, 0, r * flick, 0, Math.PI * 2);
-    s.fill();
-    s.restore();
+    this.player.update(dt, e.x, e.facing, wind, t);
+    const glow = (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) * dim;
+    this.player.draw(s, { glow, t, pulsing: game.pulsing, beat: game.beatEnvelope() });
   }
 
   drawSnow(s, cam, dt, t) {
@@ -640,15 +668,21 @@ export class Renderer {
   }
 
   drawNear(s, cam) {
-    s.fillStyle = C.near;
-    s.strokeStyle = C.near;
+    s.strokeStyle = '#151f26';
     for (const n of this.near) {
       const x = n.x - cam * 1.35;
       if (x < -300 || x > VIEW_W + 300) continue;
       if (n.kind === 'drift') {
+        s.fillStyle = C.near;
         s.beginPath();
         s.ellipse(x, VIEW_H + 18, n.w, n.h, 0, Math.PI, 0);
         s.fill();
+        s.strokeStyle = 'rgba(200,220,232,0.35)';
+        s.lineWidth = 2;
+        s.beginPath();
+        s.ellipse(x, VIEW_H + 18, n.w, n.h, 0, Math.PI * 1.15, Math.PI * 1.85);
+        s.stroke();
+        s.strokeStyle = '#151f26';
       } else {
         const r = rng(n.seed);
         s.lineCap = 'round';
@@ -687,7 +721,7 @@ export class Renderer {
 
     let breath = 0;
     for (const r of game.rings) if (r.strong) breath = Math.max(breath, 1 - (r.t / PULSE.ringSeconds) * 1.4);
-    const er = w < THRESHOLDS.heavy ? 8 + 14 * (w / THRESHOLDS.heavy) : 26 + 64 * (w / 100);
+    const er = w < THRESHOLDS.heavy ? 14 + 18 * (w / THRESHOLDS.heavy) : 40 + 75 * (w / 100);
     out.push({ x: e.x, y: e.y, R: er + 34 * Math.max(0, breath), seed: 1, a: (1 - game.lightsOutAlpha()) * fadeAll });
 
     for (const c of game.companions) out.push({ x: c.x, y: c.y, R: 26, seed: 2 + c.phase, a: fadeAll });
@@ -698,7 +732,8 @@ export class Renderer {
       if (o.state === 'frozen') R = o.progress > 0 ? b.reach * 0.45 * (o.progress / o.pulses) : 0;
       else if (o.state === 'melting') R = b.reach * 0.45 + (b.reach * 0.55 + 30) * o.meltT;
       else R = b.reach + 30 + (o.type === 'lantern' ? o.radius * 0.6 : 150) * o.spread;
-      if (R > 0) out.push({ x: b.cx, y: b.cy, R, seed: o.seed, a: fadeAll, obj: o });
+      const thin = o.state === 'frozen' ? 0.4 : 1;
+      if (R > 0) out.push({ x: b.cx, y: b.cy, R, seed: o.seed, a: fadeAll * thin, obj: o });
     }
 
     const f = game.fire;
@@ -757,33 +792,42 @@ export class Renderer {
       m.stroke();
     }
 
+    m.restore();
+
     // Hints are written into the frost, like a finger on a cold window.
+    const tm = this.tctx;
+    tm.setTransform(1, 0, 0, 1, 0, 0);
+    tm.clearRect(0, 0, FW, FH);
+    tm.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+    tm.fillStyle = '#fff';
+    tm.save();
+    tm.translate(-game.camX, 0);
     const e = game.ember;
-    m.font = `50px ${HAND}`;
-    m.textAlign = 'center';
+    tm.font = `50px ${HAND}`;
+    tm.textAlign = 'center';
     game.level.hints.forEach((h, i) => {
       const done = h.until && game.hintFlags[h.until];
       const target = game.mode === 'title' || done ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
       this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * 2);
       if (this.hintAlpha[i] < 0.01) return;
-      m.globalAlpha = 0.9 * this.hintAlpha[i];
-      m.fillText(h.text, h.x, groundY(h.x) - 250);
+      tm.globalAlpha = 0.9 * this.hintAlpha[i];
+      tm.fillText(h.text, h.x, 175);
     });
-    m.restore();
+    tm.restore();
 
     // Title and closing line, in screen space.
-    m.textAlign = 'center';
+    tm.textAlign = 'center';
     if (game.mode === 'title' || game.titleFade > 0) {
       const a = game.mode === 'title' ? 1 : game.titleFade;
-      m.globalAlpha = a;
-      m.font = `190px ${HAND}`;
-      this.writeReveal(m, 'thaw', VIEW_W / 2, VIEW_H / 2 - 10, Math.min(1, t / 1.6));
+      tm.globalAlpha = a;
+      tm.font = `190px ${HAND}`;
+      this.writeReveal(tm, 'thaw', VIEW_W / 2, 215, Math.min(1, t / 1.6));
     }
     if (game.mode === 'stageEnd') {
       const T = game.stageEndT;
-      m.globalAlpha = 1;
-      m.font = `64px ${HAND}`;
-      this.writeReveal(m, game.level.closingLine.toLowerCase(), VIEW_W / 2, VIEW_H / 2 - 10, clamp01((T - 3.2) / 2.6));
+      tm.globalAlpha = 1;
+      tm.font = `64px ${HAND}`;
+      this.writeReveal(tm, game.level.closingLine.toLowerCase(), VIEW_W / 2, 190, clamp01((T - 3.2) / 2.6));
     }
     m.globalAlpha = 1;
   }
@@ -817,7 +861,7 @@ export class Renderer {
     f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
     f.imageSmoothingQuality = 'high';
     f.drawImage(this.small, 0, 0, VIEW_W, VIEW_H);
-    f.fillStyle = `rgba(160,190,205,${look.tintA})`;
+    f.fillStyle = `rgba(178,202,214,${look.tintA})`;
     f.fillRect(0, 0, VIEW_W, VIEW_H);
 
     // Crystals are fixed to the world, so they scroll with it.
@@ -866,6 +910,7 @@ export class Renderer {
     f.filter = 'blur(3px)';
     f.drawImage(this.mask, 0, 0);
     f.filter = 'none';
+    f.drawImage(this.textMask, 0, 0);
     f.globalCompositeOperation = 'source-over';
   }
 
@@ -965,10 +1010,10 @@ export class Renderer {
     c.textAlign = 'center';
     c.font = `italic 300 21px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 1.2) / 1)})`;
-    c.fillText('a small ember in a frozen world', VIEW_W / 2, VIEW_H / 2 + 60);
+    c.fillText('a small warmth in a frozen world', VIEW_W / 2, 270);
     c.font = `300 16px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 2) / 1) * (0.55 + 0.45 * Math.sin(t * 2.5))})`;
-    c.fillText('press any key to wake', VIEW_W / 2, VIEW_H / 2 + 130);
+    c.fillText('press any key to wake', VIEW_W / 2, 320);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * a})`;
     c.fillText('move: arrows or WASD   ·   pulse: hold space   ·   pause: esc   ·   mute: M', VIEW_W / 2, VIEW_H - 40);
@@ -997,13 +1042,13 @@ export class Renderer {
     c.textAlign = 'center';
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.8 * a})`;
-    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW_W / 2, VIEW_H / 2 - 92);
+    c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW_W / 2, 112);
     const b = clamp01((T - 5.8) / 1);
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;
-    c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW_W / 2, VIEW_H / 2 + 50);
+    c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW_W / 2, 250);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to restart', VIEW_W / 2, VIEW_H / 2 + 100);
+    c.fillText('space to keep wandering   ·   R to restart', VIEW_W / 2, 290);
   }
 }
