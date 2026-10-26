@@ -755,7 +755,13 @@ export class Renderer {
 
   // Stones stacked where the path splits, with a strip of cloth snapping in the wind.
   drawCairn(s, x, t, ws) {
-    const gy = groundY(x);
+    const gy0 = groundY(x);
+    // Drawn large, so the split reads from a distance against the snow.
+    s.save();
+    s.translate(x, gy0);
+    s.scale(1.7, 1.7);
+    s.translate(-x, -gy0);
+    const gy = gy0;
     const stones = [[0, 0, 17, 9], [2, -15, 13, 8], [-1, -28, 10, 7], [1, -38, 7, 5]];
     for (const [dx, dy, rx, ry] of stones) {
       s.fillStyle = '#25343d';
@@ -773,7 +779,7 @@ export class Renderer {
     s.moveTo(x + 1, gy - 42);
     s.lineTo(x + 1, gy - 70);
     s.stroke();
-    s.fillStyle = '#9a3e2a';
+    s.fillStyle = '#c4492c';
     s.beginPath();
     s.moveTo(x + 1, gy - 70);
     for (let i = 1; i <= 5; i++) {
@@ -784,6 +790,7 @@ export class Renderer {
     s.lineTo(x + 1, gy - 63);
     s.closePath();
     s.fill();
+    s.restore();
   }
 
   // What is left of the fire she rested by at the end of the last stage: charred logs, a few live coals, smoke.
@@ -1157,8 +1164,17 @@ export class Renderer {
       s.restore();
       return;
     }
+    // Bracing against a gust: she crouches and leans into the wind.
+    this.brace = (this.brace || 0) + ((e.braced ? 1 : 0) - (this.brace || 0)) * Math.min(1, dt * 8);
     s.save();
     if (drop) s.translate(0, drop);
+    if (this.brace > 0.01) {
+      const fy = floorY(e.x, e.low);
+      s.translate(e.x, fy);
+      s.rotate(0.14 * this.brace);
+      s.scale(1, 1 - 0.14 * this.brace);
+      s.translate(-e.x, -fy);
+    }
     this.player.draw(s, { glow, t, dt, pulsing: game.pulsing, beat: game.beatEnvelope(), ground: SNOW_GROUND });
     s.restore();
   }

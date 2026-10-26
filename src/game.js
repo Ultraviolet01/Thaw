@@ -76,6 +76,7 @@ export class Game {
     this.wind = { phase: 'calm', t: 0, next: 2, strength: 0, k: 0, exposed: false };
     this.bridge = L.crevasse ? { ...L.crevasse, intact: true, stress: 0, creaked: false } : null;
     this.route = null;
+    this.windTold = false;
     this.rings = [];
     this.shimmers = [];
     this.shimmerTimer = 0;
@@ -311,8 +312,13 @@ export class Game {
     const inCave = e.low && inLower(e.x);
     const top = EMBER.maxSpeed * (inCave ? CAVE.speed : 1);
     e.vx += ax * EMBER.accel * (inCave ? CAVE.speed : 1) * dt;
-    // A gust pushes her back the way she came.
-    e.vx -= WIND.push * gust * dt;
+    // A gust pushes her back the way she came, unless she stands still and braces against it.
+    e.braced = gust > 0.3 && controllable && ax === 0 && !this.pulsing;
+    if (gust > 0.3 && !this.windTold) {
+      this.windTold = true;
+      this.say('stand still to brace', e.x);
+    }
+    e.vx -= WIND.push * gust * (e.braced ? WIND.braced : 1) * dt;
     e.vx *= Math.exp(-(this.pulsing ? EMBER.pulseDamping : EMBER.damping) * dt);
     e.vx = clamp(e.vx, -EMBER.maxSpeed, top);
     if (Math.abs(e.vx) > 8 && ax !== 0) e.facing = Math.sign(e.vx);
@@ -353,9 +359,10 @@ export class Game {
   }
 
   // A line written in the frost for a few seconds.
-  say(text, x) {
+  // follow: a companion's home, so the line stays with whoever said it.
+  say(text, x, follow) {
     if (this.note && this.note.text === text && this.time - this.note.t < 6) return;
-    this.note = { text, x, t: this.time };
+    this.note = { text, x, t: this.time, follow };
   }
 
   // Behind a rock, out of the wind. The wind blows from the right, so the shelter is on a rock's left.
@@ -392,7 +399,7 @@ export class Game {
       w.t = 0;
       if (this.hasGuide()) {
         const g = this.companions.find((c) => c.home === 'weaver');
-        this.say('the weaver: wind is coming', g ? g.x : e.x);
+        this.say('the weaver: wind is coming', g ? g.x : e.x, 'weaver');
       }
     } else if (w.phase === 'warn' && w.t >= warn) {
       w.phase = 'gust';
@@ -403,9 +410,10 @@ export class Game {
       w.next = between(WIND.calm);
       this.hintFlags.gusted = true;
     }
-    // How hard it is blowing right now: a rising warning, a full gust, then easing off.
-    const target = w.phase === 'gust' ? 1 : w.phase === 'warn' ? 0.25 * (w.t / warn) : 0;
-    w.strength += (target - w.strength) * Math.min(1, dt * (w.phase === 'gust' ? 3 : 1.5));
+    // How hard it is blowing right now. The warning is easy to see and hear from its first moment:
+    // snow starts streaking sideways and the howl rises, before the gust itself hits.
+    const target = w.phase === 'gust' ? 1 : w.phase === 'warn' ? 0.2 + 0.4 * (w.t / warn) : 0;
+    w.strength += (target - w.strength) * Math.min(1, dt * 3);
     if (w.phase === 'gust' && w.exposed === false && zone) this.hintFlags.sheltered = true;
   }
 
@@ -774,6 +782,10 @@ export class Game {
 
   updateLightsOut(dt) {
     if (this.note && this.time - this.note.t > 6) this.note = null;
+    if (this.note && this.note.follow) {
+      const c = this.companions.find((x) => x.home === this.note.follow);
+      if (c) this.note.x = c.x;
+    }
     const lo = this.lightsOut;
     if (!lo) return;
     lo.t += dt;

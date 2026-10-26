@@ -67,6 +67,7 @@ export const WIND = {
   guideWarn: 5.5, // with the weaver walking with her, the warning comes this early
   gust: 4.5,
   push: 300, // how hard a gust pushes her back, at strength 1
+  braced: 0.08, // standing still, she braces: the push is cut to this fraction (she still loses warmth)
   gustDrain: 1.3, // extra warmth lost per second in a full gust, at strength 1
   leeBehind: 95, // shelter reaches this far to the left of a rock
   leeAhead: 8,
