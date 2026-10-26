@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Dependency order: each module comes after the ones it imports.
-ORDER = ['config', 'terrain', 'level1', 'prologue', 'village', 'input', 'audio', 'character', 'game', 'render', 'main']
+ORDER = ['config', 'terrain', 'level1', 'level2', 'prologue', 'village', 'input', 'audio', 'character', 'game', 'render', 'main']
 # Files shipped next to index.html, byte for byte. The theme track must stay unmodified.
 ASSETS = ['audio/thatgamejam02_theme.wav', 'audio/CREDITS.md'] + sorted(
     str(p.relative_to(ROOT)) for d in ('sfx', 'music') for p in (ROOT / 'audio' / d).glob('*.mp3'))
@@ -25,6 +25,7 @@ PLAY_NOTES = """THAW
 Controls
 - Walk: Left and Right arrows, or A and D
 - Pulse: hold Space (you cannot move while pulsing)
+- Take the low way at a cairn: Down arrow or S
 - Pause: Esc
 - Mute: M
 - Replay the stage: R

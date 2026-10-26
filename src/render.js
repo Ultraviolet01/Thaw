@@ -1,7 +1,7 @@
-import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS } from './config.js';
-import { groundY } from './terrain.js';
+import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND } from './config.js';
+import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
-import { COMPANION_SCALE, PLAYER_SCALE, INTRO_LOCK } from './game.js';
+import { COMPANION_SCALE, PLAYER_SCALE } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE } from './village.js';
 
@@ -147,12 +147,10 @@ export class Renderer {
     this.grain = [0, 1, 2].map((i) => this.makeGrain(i));
     this.grainPatterns = this.grain.map((g) => this.ctx.createPattern(g, 'repeat'));
     this.frame = 0;
-    this.player = new Character(level.spawn.x, PLAYER_SCALE);
-    // Each wanderer keeps its figure from frozen to companion, so the thaw is one continuous body.
+    // Whether the player is down in the gully, so her feet find the cave floor.
+    this.lowNow = false;
+    // Each villager keeps one figure from frozen to companion and from stage to stage, so they stay the same person.
     this.figures = {};
-    level.objects.forEach((o, i) => {
-      if (o.type === 'wanderer') this.figures[i] = new Character(o.x, COMPANION_SCALE, VILLAGERS[i % VILLAGERS.length], -1);
-    });
 
     const r = rng(42);
     this.stars = Array.from({ length: 110 }, () => ({
@@ -161,6 +159,20 @@ export class Renderer {
     this.snow = Array.from({ length: 140 }, () => ({
       x: r() * VIEW_MAX_W, y: r() * VIEW_H, s: 0.8 + r() * 2, vy: 14 + r() * 24, vx: -8 + r() * 5, par: 0.3 + r() * 0.7, ph: r() * 6,
     }));
+    this.setLevel(level);
+
+    this.resize();
+    addEventListener('resize', () => this.resize());
+  }
+
+  // Everything that belongs to one stage: the player's figure, the frozen villagers, mist, the drifts in front.
+  setLevel(level) {
+    this.levelRef = level;
+    this.player = new Character(level.spawn.x, PLAYER_SCALE, {}, 1, (fx) => floorY(fx, this.lowNow));
+    level.objects.forEach((o) => {
+      if (o.type === 'wanderer' && o.home) this.figureFor(o.home, o.x, !!o.low, -1);
+    });
+    const r = rng(42 + level.width);
     this.mistBlobs = level.mist.map((m) => {
       const n = Math.round((m.x1 - m.x0) / 55);
       return Array.from({ length: n }, () => ({
@@ -173,9 +185,22 @@ export class Renderer {
       this.near.push({ x, kind: r() < 0.65 ? 'drift' : 'branch', w: 120 + r() * 160, h: 40 + r() * 50, seed: Math.floor(r() * 1e6) });
     }
     this.hintAlpha = level.hints.map(() => 0);
+  }
 
-    this.resize();
-    addEventListener('resize', () => this.resize());
+  // A villager's figure, made the first time they are seen. Its floor follows whether they are down in the cave.
+  figureFor(home, x, low, facing) {
+    let fig = this.figures[home];
+    if (fig && Math.abs(fig.x - x) > 200) fig = null;
+    if (!fig) {
+      const ref = this.figures[home] ? this.figures[home].ref : { low };
+      const i = Math.max(0, VILLAGE.findIndex((v) => v.id === home));
+      // The weaver and the baker keep the coats they had before villagers had homes.
+      const colors = this.figures[home] ? this.figures[home].c : VILLAGERS[(i + 2) % VILLAGERS.length];
+      fig = new Character(x, COMPANION_SCALE, colors, facing, (fx) => floorY(fx, ref.low));
+      fig.ref = ref;
+      this.figures[home] = fig;
+    }
+    return fig;
   }
 
   resize() {
@@ -340,6 +365,8 @@ export class Renderer {
     this.frame++;
     if (game.mode === 'title') return this.drawGate(game);
     if (game.mode === 'prologue') return this.drawPrologue(game, dt);
+    if (game.level !== this.levelRef) this.setLevel(game.level);
+    this.lowNow = game.ember.low;
     const w = game.displayWarmth();
     const look = warmthLook(w);
 
@@ -393,8 +420,8 @@ export class Renderer {
       c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
-    if (!(game.intro && game.intro.t < INTRO_LOCK)) this.drawBar(c, game);
-    if (game.intro && game.titleFade > 0) this.drawTitleText(c, game);
+    if (!(game.intro && game.intro.t < game.introLock())) this.drawBar(c, game);
+    if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
     if (game.mode === 'stageEnd') this.drawStageEndText(c, game);
     if (game.audio.muted) {
@@ -416,14 +443,16 @@ export class Renderer {
     s.save();
     s.translate(-cam, 0);
     this.drawGround(s, cam);
+    this.drawStageGround(s, cam, game, t);
     for (const o of game.objects) this.drawObject(s, o, t);
     this.drawPickups(s, game, t);
     this.drawFire(s, game.fire, t);
     this.drawFigures(s, game, dt, t);
+    this.drawCaveDark(s, game, t);
     this.drawLights(s, game, t);
     this.drawMist(s, t);
     s.restore();
-    this.drawSnow(s, cam, dt, t);
+    this.drawSnow(s, cam, dt, t, game.wind.strength);
     this.drawNear(s, cam);
   }
 
@@ -564,6 +593,264 @@ export class Renderer {
     }
   }
 
+  // ---------- Stage features: the ice cave, the snow bridge, rocks, the cairn, the old camp ----------
+
+  drawStageGround(s, cam, game, t) {
+    const L = game.level;
+    const x0 = cam - 60;
+    const x1 = cam + VIEW.w + 60;
+    this.drawCave(s, x0, x1, game, t);
+    if (game.bridge) this.drawBridge(s, game.bridge, t);
+    for (const rx of L.rocks || []) if (rx > x0 - 100 && rx < x1 + 100) this.drawRock(s, rx);
+    if (L.cairn) this.drawCairn(s, L.cairn.x, t, game.wind.strength);
+    if (L.camp) this.drawCamp(s, L.camp.x, t);
+  }
+
+  // The cave under the ridge: the space between the ridge's underside and the gully floor.
+  cavePath(s, a, b) {
+    const low = lowerRoute();
+    s.beginPath();
+    for (let x = a; x <= b; x += 8) {
+      const y = Math.min(low.ceiling(x), low.floor(x));
+      if (x === a) s.moveTo(x, y);
+      else s.lineTo(x, y);
+    }
+    for (let x = b; x >= a; x -= 8) s.lineTo(x, low.floor(x));
+    s.closePath();
+  }
+
+  drawCave(s, x0, x1, game, t) {
+    const low = lowerRoute();
+    if (!low) return;
+    const a = Math.max(x0, low.x0);
+    const b = Math.min(x1, low.x1);
+    if (a >= b) return;
+    this.cavePath(s, a, b);
+    const g = s.createLinearGradient(0, 430, 0, 700);
+    g.addColorStop(0, '#2a4655');
+    g.addColorStop(0.5, '#1c3240');
+    g.addColorStop(1, '#122430');
+    s.fillStyle = g;
+    s.fill();
+    s.save();
+    this.cavePath(s, a, b);
+    s.clip();
+    // Pale seams of old ice in the walls.
+    for (let x = Math.floor(a / 60) * 60; x < b; x += 60) {
+      const h = hash(61, x);
+      s.strokeStyle = `rgba(150,200,220,${0.08 + 0.06 * h})`;
+      s.lineWidth = 1;
+      s.beginPath();
+      s.moveTo(x, low.ceiling(x) + 10);
+      s.quadraticCurveTo(x + 20 * h, (low.ceiling(x) + low.floor(x)) / 2, x - 10, low.floor(x) - 6);
+      s.stroke();
+    }
+    s.restore();
+    // Icicles hanging from the ridge's underside.
+    s.fillStyle = 'rgba(190,225,240,0.55)';
+    for (let x = Math.floor(a / 23) * 23; x < b; x += 23) {
+      const c = low.ceiling(x);
+      const room = low.floor(x) - c;
+      if (room < 70) continue;
+      const len = 8 + (hash(67, x) + 1) * 14;
+      s.beginPath();
+      s.moveTo(x - 3, c);
+      s.lineTo(x, c + len);
+      s.lineTo(x + 3, c);
+      s.closePath();
+      s.fill();
+    }
+    // The cave floor: hard, pale ice.
+    s.strokeStyle = 'rgba(200,232,245,0.45)';
+    s.lineWidth = 2;
+    s.beginPath();
+    for (let x = a; x <= b; x += 8) (x === a ? s.moveTo : s.lineTo).call(s, x, low.floor(x));
+    s.stroke();
+  }
+
+  // The snow bridge on the ridge: a hairline crack that widens as it takes weight, then a hole into the cave.
+  drawBridge(s, br, t) {
+    const low = lowerRoute();
+    if (!br.intact) {
+      s.beginPath();
+      for (let x = br.x0; x <= br.x1; x += 6) {
+        const y = groundY(x) - 2 + hash(71, x) * 4;
+        if (x === br.x0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+      for (let x = br.x1; x >= br.x0; x -= 6) s.lineTo(x, low.ceiling(x) + 2);
+      s.closePath();
+      s.fillStyle = '#16293a';
+      s.fill();
+      return;
+    }
+    const k = Math.min(1, br.stress / 1.0);
+    // The snow over the gap sags a little and is a shade darker: thin snow with nothing under it.
+    s.fillStyle = 'rgba(70,95,110,0.28)';
+    s.beginPath();
+    s.moveTo(br.x0, groundY(br.x0));
+    for (let x = br.x0; x <= br.x1; x += 6) s.lineTo(x, groundY(x) + 1 + Math.sin(((x - br.x0) / (br.x1 - br.x0)) * Math.PI) * 3);
+    for (let x = br.x1; x >= br.x0; x -= 6) s.lineTo(x, groundY(x) + 9);
+    s.closePath();
+    s.fill();
+    s.strokeStyle = `rgba(20,36,46,${0.6 + 0.4 * k})`;
+    s.lineWidth = 1.4 + 2.2 * k;
+    s.beginPath();
+    for (let x = br.x0 + 6; x <= br.x1 - 6; x += 9) {
+      const y = groundY(x) + 2 + hash(73, x) * (1.5 + 3 * k);
+      if (x === br.x0 + 6) s.moveTo(x, y);
+      else s.lineTo(x, y);
+    }
+    s.stroke();
+    // The tell: a faint glint where the snow is thin.
+    const g = Math.pow(Math.max(0, Math.sin(t * 1.3 + 2)), 10);
+    if (g > 0.02) {
+      const gx = (br.x0 + br.x1) / 2 + Math.sin(t * 0.7) * 30;
+      const gy = groundY(gx) + 1;
+      s.strokeStyle = `rgba(240,250,255,${0.8 * g})`;
+      s.lineWidth = 1;
+      s.beginPath();
+      s.moveTo(gx - 6, gy);
+      s.lineTo(gx + 6, gy);
+      s.moveTo(gx, gy - 6);
+      s.lineTo(gx, gy + 6);
+      s.stroke();
+    }
+  }
+
+  // A boulder to hide behind. Snow drifts up on its sheltered (left) side.
+  drawRock(s, x) {
+    const gy = groundY(x);
+    const r = rng(Math.floor(x));
+    s.fillStyle = '#1b2830';
+    s.beginPath();
+    s.moveTo(x - 62, gy + 4);
+    s.quadraticCurveTo(x - 58, gy - 52 - r() * 10, x - 18, gy - 70 - r() * 8);
+    s.quadraticCurveTo(x + 22, gy - 76, x + 44, gy - 40 - r() * 8);
+    s.quadraticCurveTo(x + 58, gy - 14, x + 56, gy + 4);
+    s.closePath();
+    s.fill();
+    // Wind-polished face on the right, snow cap on top.
+    s.strokeStyle = 'rgba(160,190,205,0.25)';
+    s.lineWidth = 2;
+    s.beginPath();
+    s.moveTo(x + 10, gy - 72);
+    s.quadraticCurveTo(x + 46, gy - 50, x + 54, gy - 6);
+    s.stroke();
+    s.fillStyle = 'rgba(222,236,244,0.92)';
+    s.beginPath();
+    s.moveTo(x - 46, gy - 50);
+    s.quadraticCurveTo(x - 12, gy - 84, x + 20, gy - 72);
+    s.quadraticCurveTo(x - 10, gy - 70, x - 46, gy - 50);
+    s.fill();
+    // The drift in its lee.
+    s.fillStyle = '#9fb6c2';
+    s.beginPath();
+    s.moveTo(x - 60, gy - 30);
+    s.quadraticCurveTo(x - 90, gy - 6, x - 140, gy + 3);
+    s.lineTo(x - 56, gy + 4);
+    s.closePath();
+    s.fill();
+  }
+
+  // Stones stacked where the path splits, with a strip of cloth snapping in the wind.
+  drawCairn(s, x, t, ws) {
+    const gy = groundY(x);
+    const stones = [[0, 0, 17, 9], [2, -15, 13, 8], [-1, -28, 10, 7], [1, -38, 7, 5]];
+    for (const [dx, dy, rx, ry] of stones) {
+      s.fillStyle = '#25343d';
+      s.beginPath();
+      s.ellipse(x + dx, gy + dy - ry + 2, rx, ry, 0, 0, Math.PI * 2);
+      s.fill();
+      s.fillStyle = 'rgba(220,234,242,0.8)';
+      s.beginPath();
+      s.ellipse(x + dx - 2, gy + dy - ry * 1.6 + 2, rx * 0.7, ry * 0.3, 0, Math.PI, 0);
+      s.fill();
+    }
+    s.strokeStyle = '#2a1c14';
+    s.lineWidth = 2;
+    s.beginPath();
+    s.moveTo(x + 1, gy - 42);
+    s.lineTo(x + 1, gy - 70);
+    s.stroke();
+    s.fillStyle = '#9a3e2a';
+    s.beginPath();
+    s.moveTo(x + 1, gy - 70);
+    for (let i = 1; i <= 5; i++) {
+      const q = i / 5;
+      s.lineTo(x + 1 - q * (22 + 18 * ws), gy - 70 + Math.sin(t * (4 + 8 * ws) + q * 5) * (2 + 3 * q));
+    }
+    s.lineTo(x + 1 - (22 + 18 * ws), gy - 62 + Math.sin(t * (4 + 8 * ws) + 5) * 4);
+    s.lineTo(x + 1, gy - 63);
+    s.closePath();
+    s.fill();
+  }
+
+  // What is left of the fire she rested by at the end of the last stage: charred logs, a few live coals, smoke.
+  drawCamp(s, x, t) {
+    const b = groundY(x) + 4;
+    s.strokeStyle = '#1c130c';
+    s.lineWidth = 7;
+    s.lineCap = 'round';
+    s.beginPath();
+    s.moveTo(x - 26, b - 2);
+    s.lineTo(x + 22, b - 9);
+    s.moveTo(x + 26, b - 2);
+    s.lineTo(x - 22, b - 9);
+    s.stroke();
+    s.lineCap = 'butt';
+    for (let i = 0; i < 5; i++) {
+      const hot = 0.5 + 0.5 * Math.sin(t * 3 + i * 1.7);
+      s.fillStyle = `rgba(255,${120 + 60 * hot},60,${0.5 + 0.4 * hot})`;
+      s.fillRect(x - 14 + i * 7, b - 8 + (i % 2) * 2, 3, 2);
+    }
+    for (let i = 0; i < 5; i++) {
+      const q = (t * 0.25 + i / 5) % 1;
+      s.fillStyle = `rgba(190,200,206,${0.22 * (1 - q)})`;
+      s.beginPath();
+      s.arc(x + Math.sin(q * 5 + i) * 8 - q * 30, b - 14 - q * 90, 4 + q * 10, 0, Math.PI * 2);
+      s.fill();
+    }
+  }
+
+  // The cave is dark. Inside, she sees only by her own light, or by the lantern's flame if she carries it.
+  drawCaveDark(s, game, t) {
+    const low = lowerRoute();
+    if (!low) return;
+    const a = Math.max(game.camX - 60, low.x0);
+    const b = Math.min(game.camX + VIEW.w + 60, low.x1);
+    if (a >= b) return;
+    const e = game.ember;
+    const inside = e.low && inLower(e.x);
+    const flame = game.hasFlame();
+    s.save();
+    this.cavePath(s, a, b);
+    // The broken bridge opens the cave to the surface: the hole is part of the dark too.
+    const br = game.bridge;
+    if (br && !br.intact) {
+      s.moveTo(br.x0, groundY(br.x0) - 2);
+      for (let x = br.x0; x <= br.x1; x += 6) s.lineTo(x, groundY(x) - 2);
+      for (let x = br.x1; x >= br.x0; x -= 6) s.lineTo(x, low.ceiling(x) + 2);
+      s.closePath();
+    }
+    s.clip();
+    if (inside) {
+      const R = flame ? 440 : 90 + game.glowRadius() * 0.7;
+      const g = s.createRadialGradient(e.x, e.y, R * 0.2, e.x, e.y, R);
+      g.addColorStop(0, 'rgba(3,7,10,0)');
+      g.addColorStop(1, `rgba(3,7,10,${flame ? 0.5 : 0.95})`);
+      s.fillStyle = g;
+    } else {
+      s.fillStyle = 'rgba(3,7,10,0.72)';
+    }
+    s.fillRect(a, 0, b - a, VIEW_H);
+    if (inside && flame) {
+      s.globalCompositeOperation = 'lighter';
+      glow(s, e.x, e.y - 30, 360, '255,160,80', 0.16 + 0.03 * Math.sin(t * 7));
+    }
+    s.restore();
+  }
+
   drawObject(s, o, t) {
     if (o.state === 'lost') {
       this.drawLost(s, o, t);
@@ -571,7 +858,7 @@ export class Renderer {
     }
     if (o.gone) return;
     const warm = o.state === 'thawed' ? 1 : o.state === 'melting' ? o.meltT : 0;
-    if (o.type === 'tree') this.drawPine(s, o.x, groundY(o.x) + 6, 175, o.seed, warm);
+    if (o.type === 'tree') this.drawPine(s, o.x, floorY(o.x, o.low) + 6, 175, o.seed, warm);
     else if (o.type === 'lantern') this.drawLantern(s, o, warm, t);
     else if (o.type === 'wanderer') this.drawWanderer(s, o, warm, t);
   }
@@ -654,13 +941,13 @@ export class Renderer {
 
   drawLantern(s, o, warm, t) {
     const x = o.x;
-    const b = groundY(x) + 6;
+    const b = floorY(x, o.low) + 6;
     s.fillStyle = mix('#13222b', '#3a2715', warm);
     s.fillRect(x - 3, b - 118, 6, 118);
     s.fillRect(x - 3, b - 118, 24, 4);
     s.fillRect(x + 14, b - 114, 2, 6);
     const lx = o.x + 16;
-    const ly = groundY(o.x) - 92;
+    const ly = floorY(o.x, o.low) - 92;
     const flicker = 0.85 + 0.15 * Math.sin(t * 9 + o.seed);
     s.fillStyle = warm > 0 ? `rgba(255,212,130,${warm * flicker})` : 'rgba(110,150,170,0.35)';
     roundRect(s, lx - 8, ly - 11, 16, 22, 3);
@@ -685,7 +972,7 @@ export class Renderer {
       const k = this.pickupFade(p);
       if (k <= 0) continue;
       const x = p.x;
-      const y = groundY(x) + 1;
+      const y = floorY(x, p.low) + 1;
       const r = rng(p.seed);
       s.globalAlpha = k;
       s.fillStyle = '#1a1410';
@@ -727,7 +1014,8 @@ export class Renderer {
   // A frozen wanderer: the same figure as a companion, still and drained of color.
   drawWanderer(s, o, warm, t) {
     // A companion who froze again keeps the body they had.
-    const fig = this.figures[o.figId ?? o.id];
+    const fig = this.figures[o.figId ?? o.home];
+    if (fig) fig.ref.low = !!o.low;
     // Their fire went out with everyone else's: no pot, arms wrapped round themselves.
     if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t, ground: SNOW_GROUND });
   }
@@ -784,7 +1072,7 @@ export class Renderer {
       if (o.state === 'melting') glow(s, b.cx, b.cy, 60 + 60 * o.meltT, '240,170,80', 0.2 * o.meltT);
       if (o.state !== 'thawed') continue;
       if (o.type === 'lantern') {
-        glow(s, o.x + 16, groundY(o.x) - 92, o.radius * (0.4 + 0.6 * o.spread) * (1 + 0.03 * Math.sin(t * 8)), '255,190,100', 0.38);
+        glow(s, o.x + 16, floorY(o.x, o.low) - 92, o.radius * (0.4 + 0.6 * o.spread) * (1 + 0.03 * Math.sin(t * 8)), '255,190,100', 0.38);
       } else {
         glow(s, b.cx, b.cy, 60 + 200 * o.spread, '240,170,80', (o.gone ? 0.14 : 0.18) * o.spread);
       }
@@ -792,12 +1080,12 @@ export class Renderer {
     for (const c of game.companions) glow(s, c.x, c.y, 46, '255,215,160', 0.3);
     for (const p of game.pickups) {
       const k = this.pickupFade(p) * (0.85 + 0.15 * Math.sin(t * 7 + p.seed));
-      glow(s, p.x, groundY(p.x) - 6, 70, '255,150,60', 0.4 * k);
+      glow(s, p.x, floorY(p.x, p.low) - 6, 70, '255,150,60', 0.4 * k);
     }
     const e = game.ember;
     const dim = 1 - game.lightsOutAlpha();
     glow(s, e.x, e.y, game.glowRadius(), '255,200,140', 0.28 * dim);
-    glow(s, e.x, groundY(e.x), game.glowRadius() * 0.7, '255,190,120', 0.18 * dim);
+    glow(s, e.x, floorY(e.x, e.low), game.glowRadius() * 0.7, '255,190,120', 0.18 * dim);
     s.restore();
   }
 
@@ -829,25 +1117,31 @@ export class Renderer {
     const e = game.ember;
     const w = game.displayWarmth();
     const dim = 1 - game.lightsOutAlpha();
-    const wind = -70;
-    if (Math.abs(this.player.x - e.x) > 200) this.player = new Character(e.x, PLAYER_SCALE, {}, e.facing);
+    // Cloaks and scarves stream out in a gust; the wind blows from the right.
+    const wind = -70 - 520 * game.wind.strength * (game.wind.exposed ? 1 : 0.3);
+    if (Math.abs(this.player.x - e.x) > 200) this.player = new Character(e.x, PLAYER_SCALE, {}, e.facing, (fx) => floorY(fx, this.lowNow));
+    // Falling through the snow bridge: drawn above the cave floor at first, dropping to it.
+    const fall = e.fall && e.fall.t < 0.7 ? e.fall : null;
+    const drop = fall ? -fall.dy * (1 - (fall.t / 0.7) ** 2) : 0;
     for (const c of game.companions) {
-      const fig = this.figures[c.objId];
-      if (!fig) continue;
-      if (Math.abs(fig.x - c.x) > 200) this.figures[c.objId] = new Character(c.x, COMPANION_SCALE, fig.c, c.facing);
-      this.figures[c.objId].update(dt, c.x, c.facing, wind, t);
+      const fig = this.figureFor(c.home, c.x, c.low, c.facing);
+      fig.ref.low = c.low;
+      fig.update(dt, c.x, c.facing, wind, t);
       // The fire passes from her pot to theirs as they join: a few sparks, then their own coal glows.
       const since = t - (c.joinedAt ?? -99);
       const lit = clamp01((since - 0.7) / 0.5);
-      this.figures[c.objId].draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0, ground: SNOW_GROUND });
-      if (since < 1.3) this.drawSparkTrail(s, this.player.chest(), this.figures[c.objId].chest(), since / 1.3);
+      s.save();
+      if (drop && c.low) s.translate(0, drop);
+      fig.draw(s, { glow: 0.55 * dim * lit, t, dt, pot: true, pulsing: game.pulsing, beat: game.pulsing ? game.beatEnvelope() : 0, ground: SNOW_GROUND });
+      s.restore();
+      if (since < 1.3) this.drawSparkTrail(s, this.player.chest(), fig.chest(), since / 1.3);
     }
     const steps = this.player.footfalls;
     this.player.update(dt, e.x, e.facing, wind, t);
     if (this.player.footfalls > steps) game.audio.footstep();
     let glow = Math.min(1.4, (w < THRESHOLDS.heavy ? 0.15 + 0.35 * (w / THRESHOLDS.heavy) : 0.5 + 0.5 * (w / 100)) + 0.6 * game.flare) * dim;
     const it = game.intro;
-    if (it && it.t < INTRO_LOCK) {
+    if (it && it.kind !== 'walk' && it.t < game.introLock()) {
       // Rising out of the snow: hidden below the snow line, lifting up, the ember brightening as it comes.
       const k = smooth01((it.t - 0.4) / 2.2);
       glow *= 0.25 + 0.75 * smooth01((it.t - 1.4) / 1.2);
@@ -863,17 +1157,32 @@ export class Renderer {
       s.restore();
       return;
     }
+    s.save();
+    if (drop) s.translate(0, drop);
     this.player.draw(s, { glow, t, dt, pulsing: game.pulsing, beat: game.beatEnvelope(), ground: SNOW_GROUND });
+    s.restore();
   }
 
-  drawSnow(s, cam, dt, t) {
+  // Falling snow. In the wind it is driven sideways into streaks: the first warning that a gust is coming.
+  drawSnow(s, cam, dt, t, ws = 0) {
     for (const f of this.snow) {
-      f.y += f.vy * dt;
-      f.x += (f.vx + Math.sin(t + f.ph) * 8) * dt;
+      f.y += f.vy * (1 - 0.6 * ws) * dt;
+      f.x += (f.vx - 900 * ws * f.par + Math.sin(t + f.ph) * 8) * dt;
       if (f.y > VIEW_H) f.y -= VIEW_H;
       const x = (((f.x - cam * f.par) % VIEW.w) + VIEW.w) % VIEW.w;
-      s.fillStyle = `rgba(225,238,248,${0.22 * f.s})`;
-      s.fillRect(x, f.y, f.s, f.s);
+      s.fillStyle = `rgba(225,238,248,${0.22 * f.s * (1 + ws)})`;
+      if (ws > 0.12) s.fillRect(x, f.y, f.s + 40 * ws * f.par, Math.max(0.8, f.s * 0.6));
+      else s.fillRect(x, f.y, f.s, f.s);
+    }
+    // Spindrift: long low streaks of blown snow.
+    if (ws > 0.05) {
+      for (let i = 0; i < 18; i++) {
+        const sp = 1400 + hash(83, i) * 900;
+        const x = VIEW.w - (((t * sp + hash(89, i) * 5000) % (VIEW.w + 400)));
+        const y = 380 + (hash(97, i) + 1) * 150;
+        s.fillStyle = `rgba(230,242,250,${0.18 * ws})`;
+        s.fillRect(x, y, 120 + 160 * ws, 1.5);
+      }
     }
   }
 
@@ -932,12 +1241,12 @@ export class Renderer {
     let breath = 0;
     for (const r of game.rings) if (r.strong) breath = Math.max(breath, 1 - (r.t / PULSE.ringSeconds) * 1.4);
     let er = w < THRESHOLDS.heavy ? 14 + 18 * (w / THRESHOLDS.heavy) : 40 + 75 * (w / 100);
-    if (game.intro) er *= smooth01((game.intro.t - 2.0) / 1.4);
+    if (game.intro && game.intro.kind !== 'walk') er *= smooth01((game.intro.t - 2.0) / 1.4);
     out.push({ x: e.x, y: e.y, R: er + 34 * Math.max(0, breath), seed: 1, a: (1 - game.lightsOutAlpha()) * fadeAll });
 
     // As the cold takes hold, frost creeps back over what was thawed.
     const regrow = 0.1 + 0.9 * clamp01((w - THRESHOLDS.heavy) / (THRESHOLDS.frost - THRESHOLDS.heavy));
-    for (const p of game.pickups) out.push({ x: p.x, y: groundY(p.x) - 10, R: 34, seed: p.seed % 97, a: fadeAll * this.pickupFade(p) });
+    for (const p of game.pickups) out.push({ x: p.x, y: floorY(p.x, p.low) - 10, R: 34, seed: p.seed % 97, a: fadeAll * this.pickupFade(p) });
     for (const c of game.companions) out.push({ x: c.x, y: c.y, R: 30, seed: 2 + c.phase, a: fadeAll * regrow });
 
     for (const o of game.objects) {
@@ -1022,10 +1331,13 @@ export class Renderer {
     tm.font = `50px ${HAND}`;
     tm.textAlign = 'center';
     // Only one line is written at a time: the nearest hint that applies right now, so lines never run together.
-    const live = (h) => !(h.until && game.hintFlags[h.until]) && !(h.after && !game.hintFlags[h.after]);
+    // A hint marked low is only for someone down in the cave, and the others only for the surface.
+    const lowHere = e.low && inLower(e.x);
+    const live = (h) => !(h.until && game.hintFlags[h.until]) && !(h.after && !game.hintFlags[h.after])
+      && (h.low === undefined || !!h.low === lowHere || !inLower(h.x));
     let nearest = null;
     // When a companion's fire goes out, that is what the frost says, for a few seconds.
-    const note = game.relapseNote && game.time - game.relapseNote.t < 6 ? game.relapseNote : null;
+    const note = game.note && game.time - game.note.t < 6 ? game.note : null;
     if (note) {
       const age = game.time - note.t;
       tm.globalAlpha = 0.9 * Math.min(1, age / 0.8) * Math.min(1, (6 - age) / 1);
@@ -1049,7 +1361,13 @@ export class Renderer {
     if (game.intro && game.titleFade > 0) {
       tm.globalAlpha = game.titleFade;
       tm.font = `190px ${HAND}`;
-      this.writeReveal(tm, 'thaw', VIEW.w / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
+      if (game.intro.kind === 'walk') {
+        // Later stages: the stage's name, written as she sets off.
+        tm.font = `120px ${HAND}`;
+        this.writeReveal(tm, game.level.name.toLowerCase(), VIEW.w / 2, 200, clamp01((game.intro.t - 0.6) / 1.6));
+      } else {
+        this.writeReveal(tm, 'thaw', VIEW.w / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
+      }
     }
     if (game.mode === 'stageEnd') {
       const T = game.stageEndT;
@@ -1129,6 +1447,23 @@ export class Renderer {
           f.lineTo(gx, gy + 8);
           f.stroke();
         }
+      }
+    }
+    // The snow bridge glints through the frost like frozen things do, so the tell can be seen from a way off.
+    const br = game.bridge;
+    if (br && br.intact) {
+      const g = Math.pow(Math.max(0, Math.sin(t * 1.3 + 2)), 6);
+      if (g > 0.02) {
+        const gx = (br.x0 + br.x1) / 2 + Math.sin(t * 0.7) * 30;
+        const gy = groundY(gx) - 2;
+        f.strokeStyle = `rgba(245,252,255,${0.95 * g})`;
+        f.lineWidth = 1.4;
+        f.beginPath();
+        f.moveTo(gx - 10, gy);
+        f.lineTo(gx + 10, gy);
+        f.moveTo(gx, gy - 10);
+        f.lineTo(gx, gy + 10);
+        f.stroke();
       }
     }
     // A wet, bright rim where the frost has melted back.
@@ -1702,7 +2037,7 @@ export class Renderer {
     c.fillText('paused', VIEW.w / 2, VIEW_H / 2 - 70);
     c.font = `300 18px ${SERIF}`;
     const lines = [
-      'move: arrows, WASD or left stick',
+      'move: arrows, WASD or left stick   ·   at a cairn, down takes the low way',
       'pulse: hold space or A',
       'mute: M   ·   replay this stage: R   ·   full screen: F',
       'enter to start over from the beginning',
@@ -1721,7 +2056,7 @@ export class Renderer {
     const b = clamp01((T - 5.8) / 1);
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;
-    c.fillText(`companions found: ${game.companions.length} of ${game.totalWanderers}`, VIEW.w / 2, 250);
+    c.fillText(`companions found: ${game.foundThisStage()} of ${game.totalWanderers}`, VIEW.w / 2, 250);
     // What was chosen at each fork in this stage.
     const forks = game.level.forks || {};
     const said = Object.keys(game.choices).map((k) => forks[k] && forks[k][game.choices[k]]).filter(Boolean);
@@ -1736,6 +2071,7 @@ export class Renderer {
     this.drawVillage(c, game, b);
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    c.fillText('space to keep wandering   ·   R to replay this stage   ·   enter to start over from the beginning', VIEW.w / 2, 520);
+    const on = game.hasNextStage() ? 'space to walk on' : 'space to keep wandering';
+    c.fillText(`${on}   ·   R to replay this stage   ·   enter to start over from the beginning`, VIEW.w / 2, 520);
   }
 }

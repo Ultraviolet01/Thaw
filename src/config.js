@@ -58,3 +58,30 @@ export const EMBERS = {
   // The most that can ever appear in one stage, picked up or not. A stage can set its own with maxEmbers.
   maxPerStage: 2,
 };
+
+// Katabatic wind: calm, a warning (snow streaks sideways and the howl rises), then a gust that pushes her back,
+// drains warmth and breaks a pulse. Behind a rock she is out of it. It blows from the right.
+export const WIND = {
+  calm: [6, 9], // seconds between gusts
+  warn: 3, // seconds of warning before a gust
+  guideWarn: 5.5, // with the weaver walking with her, the warning comes this early
+  gust: 4.5,
+  push: 300, // how hard a gust pushes her back, at strength 1
+  gustDrain: 1.3, // extra warmth lost per second in a full gust, at strength 1
+  leeBehind: 95, // shelter reaches this far to the left of a rock
+  leeAhead: 8,
+};
+
+// The ice cave under the ridge: out of the wind, but dark and slowly cold, and slower going.
+export const CAVE = {
+  chill: 0.6, // extra warmth lost per second in the cave, unless she carries the lantern's flame
+  speed: 0.75,
+};
+
+// A snow bridge over a crevasse on the ridge gives way if she stops or pulses on it.
+export const CREVASSE = {
+  standTime: 1.0, // seconds of standing (or being held back by the wind) before it gives way
+  slowSpeed: 35, // slower than this counts as standing
+  pulseStress: 0.6, // a pulse on the bridge counts as this many seconds of standing
+  fallSeconds: 0.7,
+};

@@ -3,6 +3,7 @@ import { GameAudio } from './audio.js';
 import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { level1 } from './level1.js';
+import { level2 } from './level2.js';
 
 // Load the fonts up front so the first written line never starts in a fallback face.
 if (document.fonts) {
@@ -14,7 +15,7 @@ if (document.fonts) {
 const canvas = document.getElementById('game');
 const input = new Input();
 const audio = new GameAudio();
-const game = new Game(level1, audio);
+const game = new Game([level1, level2], audio);
 const renderer = new Renderer(canvas, level1);
 
 let last = performance.now();

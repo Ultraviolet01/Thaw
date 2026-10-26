@@ -1,7 +1,8 @@
 import {
   VIEW, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
+  WIND, CAVE, CREVASSE,
 } from './config.js';
-import { groundY, objectBounds, setTerrain } from './terrain.js';
+import { groundY, floorY, inLower, lowerRoute, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
 import { POT_HEIGHT } from './character.js';
 import { villagerName } from './village.js';
@@ -14,14 +15,20 @@ const CHEST = POT_HEIGHT;
 export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
 const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-// Seconds of the stage intro before the player can move.
+// Seconds of the first stage's intro (rising from the snow) before the player can move.
 export const INTRO_LOCK = 3.2;
+// Later stages open with her already standing: a shorter pause while the stage name is written.
+const WALK_ON_LOCK = 1.4;
 const between = ([a, b]) => a + Math.random() * (b - a);
 
 export class Game {
-  constructor(level, audio) {
-    this.level = level;
+  constructor(levels, audio) {
+    this.levels = levels;
+    this.stage = 0;
+    this.level = levels[0];
     this.audio = audio;
+    // Who walks into a stage with her. Restarting a stage brings back the same people.
+    this.companionsAtStageStart = [];
     // title (press any key, so the browser lets sound play) | prologue | play | paused | stageEnd
     this.mode = 'title';
     this.prologue = null;
@@ -42,9 +49,11 @@ export class Game {
       ? JSON.parse(JSON.stringify(this.ledgerAtStageStart))
       : { saved: [], lost: [], forks: {}, carry: [] };
     this.coldTimer = 0;
-    this.relapseNote = null;
+    // A line the frost says for a few seconds: a companion's fire going out, the wind breaking a pulse.
+    this.note = null;
     this.stageRecorded = false;
-    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max };
+    // low: down in the gully or the ice cave. wantLow: she has chosen the gully at the cairn.
+    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max, low: false, wantLow: false, fall: null };
     this.checkpoint = { ...L.spawn };
     this.objects = L.objects.map((o, i) => ({
       ...o,
@@ -60,7 +69,13 @@ export class Game {
     }));
     this.totalWanderers = this.objects.filter((o) => o.type === 'wanderer').length;
     this.fire = { ...L.fire, reached: false };
-    this.companions = [];
+    this.companions = this.companionsAtStageStart.map((home, i) => {
+      const x = Math.max(30, L.spawn.x - 44 * (i + 1));
+      return { x, y: groundY(x) - CHEST * COMPANION_SCALE, facing: 1, phase: Math.random() * 6, home, low: false, joinedAt: -99 };
+    });
+    this.wind = { phase: 'calm', t: 0, next: 2, strength: 0, k: 0, exposed: false };
+    this.bridge = L.crevasse ? { ...L.crevasse, intact: true, stress: 0, creaked: false } : null;
+    this.route = null;
     this.rings = [];
     this.shimmers = [];
     this.shimmerTimer = 0;
@@ -76,7 +91,10 @@ export class Game {
     this.lightsOut = null;
     this.stageEndT = 0;
     this.freeRoam = false;
-    this.hintFlags = { moved: false, pulsed: false, lanternLit: false, rested: false, forkChosen: false, lostLantern: false, lostWanderer: false };
+    this.hintFlags = {
+      moved: false, pulsed: false, lanternLit: false, rested: false, forkChosen: false, lostLantern: false, lostWanderer: false,
+      gusted: false, sheltered: false, routeChosen: false,
+    };
     this.choices = {};
     this.barFlash = 6;
     this.flashed = new Set();
@@ -132,6 +150,10 @@ export class Game {
         return;
       }
       if (this.stageEndT > 6 && input.pulsePressed) {
+        if (this.hasNextStage()) {
+          this.goToStage(this.stage + 1);
+          return;
+        }
         this.mode = 'play';
         this.freeRoam = true;
         this.holdLock = true;
@@ -150,8 +172,46 @@ export class Game {
     location.reload();
   }
 
+  // How many of this stage's frozen villagers are walking with her now.
+  foundThisStage() {
+    const homes = this.level.objects.filter((o) => o.type === 'wanderer' && o.home).map((o) => o.home);
+    return this.companions.filter((c) => homes.includes(c.home)).length;
+  }
+
+  hasNextStage() {
+    return this.stage + 1 < this.levels.length;
+  }
+
+  // On to the next stage: she walks on from the fire, with everyone who is with her and everything she chose.
+  goToStage(i) {
+    this.recordStage();
+    this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
+    this.companionsAtStageStart = this.companions.map((c) => c.home).filter(Boolean);
+    this.stage = i;
+    this.level = this.levels[i];
+    setTerrain(this.level.ground, this.level.lower);
+    this.reset();
+    this.audio.setFire(0);
+    this.mode = 'play';
+    this.intro = { t: 0, pulsed: true, kind: 'walk' };
+    this.titleFade = 1;
+  }
+
+  // The weaver can read the wind, but only while walking with her.
+  hasGuide() {
+    return this.ledger.carry.includes('guide') && this.companions.some((c) => c.home === 'weaver');
+  }
+
+  hasFlame() {
+    return this.ledger.carry.includes('flame');
+  }
+
+  introLock() {
+    return this.intro && this.intro.kind === 'walk' ? WALK_ON_LOCK : INTRO_LOCK;
+  }
+
   endPrologue() {
-    setTerrain(this.level.ground);
+    setTerrain(this.level.ground, this.level.lower);
     this.audio.setPrologueMusic(0);
     this.audio.setWind(0);
     this.audio.resetLayers();
@@ -175,7 +235,7 @@ export class Game {
       this.audio.pulse();
     }
     // The title stays until the player starts walking (or a while passes), then fades.
-    if (it.t > INTRO_LOCK && (Math.abs(input.moveX) > 0.1 || it.t > 12)) it.fading = true;
+    if (it.t > this.introLock() && (Math.abs(input.moveX) > 0.1 || it.t > (it.kind === 'walk' ? 5 : 12))) it.fading = true;
     if (it.fading) this.titleFade = Math.max(0, this.titleFade - dt * 0.6);
     if (this.titleFade <= 0) this.intro = null;
   }
@@ -216,11 +276,20 @@ export class Game {
   simulate(dt, input) {
     const e = this.ember;
     const L = this.level;
-    const controllable = this.mode === 'play' && !this.lightsOut && !(this.intro && this.intro.t < INTRO_LOCK);
+    const falling = e.fall && e.fall.t < CREVASSE.fallSeconds;
+    const controllable = this.mode === 'play' && !this.lightsOut && !falling && !(this.intro && this.intro.t < this.introLock());
 
-    // Pulse: hold to pulse on every heartbeat. The first pulse fires on press.
+    this.updateWind(dt);
+    const gust = this.wind.exposed && this.wind.phase === 'gust' ? this.wind.strength * this.wind.k : 0;
+
+    // Pulse: hold to pulse on every heartbeat. The first pulse fires on press. A gust breaks it: let go and try again.
     if (this.holdLock && !input.pulseHeld) this.holdLock = false;
-    const wantPulse = controllable && !this.holdLock && input.pulseHeld;
+    if (gust > 0.3 && this.pulsing) {
+      this.pulsing = false;
+      this.holdLock = true;
+      this.say('the wind breaks your pulse', e.x);
+    }
+    const wantPulse = controllable && !this.holdLock && input.pulseHeld && gust <= 0.3;
     if (wantPulse && !this.pulsing) {
       this.pulsing = true;
       this.beatTimer = this.beatInterval();
@@ -233,14 +302,27 @@ export class Game {
       ax = Math.max(-1, Math.min(1, input.moveX));
       if (Math.abs(ax) > 0.1) this.hintFlags.moved = true;
     }
-    e.vx += ax * EMBER.accel * dt;
+    // At the cairn, down chooses the gully; up changes her mind.
+    const cairn = L.cairn;
+    if (cairn && controllable && Math.abs(e.x - cairn.x) < 220) {
+      if (input.moveY > 0.5) e.wantLow = true;
+      else if (input.moveY < -0.5) e.wantLow = false;
+    }
+    const inCave = e.low && inLower(e.x);
+    const top = EMBER.maxSpeed * (inCave ? CAVE.speed : 1);
+    e.vx += ax * EMBER.accel * (inCave ? CAVE.speed : 1) * dt;
+    // A gust pushes her back the way she came.
+    e.vx -= WIND.push * gust * dt;
     e.vx *= Math.exp(-(this.pulsing ? EMBER.pulseDamping : EMBER.damping) * dt);
-    e.vx = clamp(e.vx, -EMBER.maxSpeed, EMBER.maxSpeed);
-    if (Math.abs(e.vx) > 8) e.facing = Math.sign(e.vx);
+    e.vx = clamp(e.vx, -EMBER.maxSpeed, top);
+    if (Math.abs(e.vx) > 8 && ax !== 0) e.facing = Math.sign(e.vx);
+    const before = e.x;
     e.x += e.vx * dt;
     if (e.x < 20) { e.x = 20; e.vx = 0; }
     if (e.x > L.width - 20) { e.x = L.width - 20; e.vx = 0; }
-    e.y = groundY(e.x) - CHEST_HEIGHT;
+    this.updateRoute(before, e.x, dt);
+    e.y = floorY(e.x, e.low) - CHEST_HEIGHT;
+    if (e.fall) e.fall.t += dt;
 
     // Heartbeat clock.
     this.beatTimer += dt;
@@ -270,8 +352,124 @@ export class Game {
     if (this.pulsing) this.emitPulse();
   }
 
+  // A line written in the frost for a few seconds.
+  say(text, x) {
+    if (this.note && this.note.text === text && this.time - this.note.t < 6) return;
+    this.note = { text, x, t: this.time };
+  }
+
+  // Behind a rock, out of the wind. The wind blows from the right, so the shelter is on a rock's left.
+  inShelter(x) {
+    return (this.level.rocks || []).some((r) => x > r - WIND.leeBehind && x < r + WIND.leeAhead);
+  }
+
+  windZone(x) {
+    const e = this.ember;
+    for (const z of this.level.wind || []) {
+      if (x < z.x0 || x >= z.x1) continue;
+      // Down in the gully or the cave there is no wind.
+      if (z.ridge && e.low) return null;
+      return z;
+    }
+    return null;
+  }
+
+  // The gust cycle: calm, a warning, a gust. It only runs while she is somewhere the wind can reach.
+  updateWind(dt) {
+    const w = this.wind;
+    const e = this.ember;
+    const zone = this.windZone(e.x);
+    w.k = zone ? zone.k : 0;
+    w.exposed = !!zone && !this.inShelter(e.x);
+    if (!zone && w.phase === 'calm') {
+      w.strength = Math.max(0, w.strength - dt);
+      return;
+    }
+    w.t += dt;
+    const warn = this.hasGuide() ? WIND.guideWarn : WIND.warn;
+    if (w.phase === 'calm' && w.t >= w.next) {
+      w.phase = 'warn';
+      w.t = 0;
+      if (this.hasGuide()) {
+        const g = this.companions.find((c) => c.home === 'weaver');
+        this.say('the weaver: wind is coming', g ? g.x : e.x);
+      }
+    } else if (w.phase === 'warn' && w.t >= warn) {
+      w.phase = 'gust';
+      w.t = 0;
+    } else if (w.phase === 'gust' && w.t >= WIND.gust) {
+      w.phase = 'calm';
+      w.t = 0;
+      w.next = between(WIND.calm);
+      this.hintFlags.gusted = true;
+    }
+    // How hard it is blowing right now: a rising warning, a full gust, then easing off.
+    const target = w.phase === 'gust' ? 1 : w.phase === 'warn' ? 0.25 * (w.t / warn) : 0;
+    w.strength += (target - w.strength) * Math.min(1, dt * (w.phase === 'gust' ? 3 : 1.5));
+    if (w.phase === 'gust' && w.exposed === false && zone) this.hintFlags.sheltered = true;
+  }
+
+  // The split: which floor she is on, the choice of route, and the snow bridge on the ridge.
+  updateRoute(before, x, dt) {
+    const e = this.ember;
+    const low = lowerRoute();
+    if (!low) return;
+    if (before < low.x0 && x >= low.x0) {
+      e.low = e.wantLow;
+      this.hintFlags.routeChosen = true;
+    } else if (before >= low.x0 && x < low.x0) {
+      e.low = false;
+    }
+    if (before <= low.x1 && x > low.x1) {
+      if (!this.route) this.route = e.low ? 'gully' : 'ridge';
+      this.choices.wind = this.route;
+      this.ledger.forks.wind = this.route;
+      e.low = false;
+    } else if (before > low.x1 && x <= low.x1) {
+      e.low = this.route === 'gully' || this.route === 'fell';
+    }
+
+    const b = this.bridge;
+    if (!b || e.low) return;
+    const on = x > b.x0 && x < b.x1;
+    if (!on) {
+      b.stress = Math.max(0, b.stress - dt * 0.5);
+      return;
+    }
+    if (!b.intact) {
+      this.fallThrough();
+      return;
+    }
+    if (Math.abs(e.vx) < CREVASSE.slowSpeed) b.stress += dt;
+    if (b.stress > 0.4 && !b.creaked) {
+      b.creaked = true;
+      this.audio.crack();
+    }
+    if (b.stress >= CREVASSE.standTime) {
+      b.intact = false;
+      this.fallThrough();
+    }
+  }
+
+  // The snow bridge gives way: she drops into the ice cave below, and the people with her come down after her.
+  fallThrough() {
+    const e = this.ember;
+    const from = groundY(e.x);
+    e.low = true;
+    e.wantLow = true;
+    e.vx = 0;
+    e.fall = { t: 0, dy: floorY(e.x, true) - from };
+    this.pulsing = false;
+    this.holdLock = true;
+    this.route = 'fell';
+    this.hintFlags.routeChosen = true;
+    this.audio.refreeze();
+    this.audio.crack();
+  }
+
   emitPulse() {
     const e = this.ember;
+    if (this.bridge && !e.low && e.x > this.bridge.x0 && e.x < this.bridge.x1) this.bridge.stress += CREVASSE.pulseStress;
     e.warmth = Math.max(0, e.warmth - WARMTH.pulseCost);
     const r = this.pulseRadius();
     this.rings.push({ x: e.x, y: e.y, t: 0, r, strong: true });
@@ -326,7 +524,8 @@ export class Game {
 
     for (const o of this.objects) {
       if (o.type !== 'lantern' || o.state !== 'thawed') continue;
-      const d = Math.hypot(e.x - (o.x + 16), e.y - (groundY(o.x) - 92));
+      if (!!o.low !== (e.low && inLower(e.x))) continue;
+      const d = Math.hypot(e.x - (o.x + 16), e.y - (floorY(o.x, o.low) - 92));
       const r = o.radius * (0.4 + 0.6 * o.spread);
       if (d < r) {
         delta += WARMTH.lanternHealPerSecond * (1 - d / r * 0.5);
@@ -342,10 +541,15 @@ export class Game {
       nearHeat = true;
     }
 
+    const inCave = e.low && inLower(e.x);
     if (!nearHeat) delta -= WARMTH.drainPerSecond;
     for (const m of this.level.mist) {
       if (e.x > m.x0 && e.x < m.x1) delta -= WARMTH.mistDrainPerSecond;
     }
+    // The cave is out of the wind but slowly cold, unless she carries the lantern's flame.
+    if (inCave && !nearHeat && !this.hasFlame()) delta -= CAVE.chill;
+    // A gust strips warmth away. Behind a rock it does not reach her.
+    if (this.wind.exposed && this.wind.phase === 'gust') delta -= WIND.gustDrain * this.wind.k * this.wind.strength;
 
     e.warmth = clamp(e.warmth + delta * dt, 0, WARMTH.max);
 
@@ -385,7 +589,8 @@ export class Game {
       x: c.x,
       pulses: WARMTH.relapsePulses,
       home: c.home,
-      figId: c.objId,
+      figId: c.home,
+      low: c.low,
       relapsed: true,
     };
     this.objects.push({
@@ -400,7 +605,7 @@ export class Game {
       seed: this.objects.length * 97 + 13,
       bounds: objectBounds(o),
     });
-    this.relapseNote = { x: c.x, text: `${villagerName(c.home)}'s fire went out`, t: this.time };
+    this.note = { x: c.x, text: `${villagerName(c.home)}'s fire went out`, t: this.time };
     this.audio.refreeze();
   }
 
@@ -445,7 +650,7 @@ export class Game {
     if (o.type === 'wanderer') {
       o.gone = true;
       // They light a pot of their own from yours. Their fire widens your pulse; it does not warm you.
-      this.companions.push({ x: o.x, y: groundY(o.x) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, objId: o.figId ?? o.id, home: o.home, joinedAt: this.time });
+      this.companions.push({ x: o.x, y: floorY(o.x, o.low) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, home: o.home, low: !!o.low, joinedAt: this.time });
     }
   }
 
@@ -458,7 +663,9 @@ export class Game {
       if (Math.abs(tx - c.x) > 6) c.facing = Math.sign(tx - c.x);
       else c.facing = e.facing;
       c.x += clamp(step, -EMBER.maxSpeed * 1.2 * dt, EMBER.maxSpeed * 1.2 * dt);
-      c.y = groundY(c.x) - CHEST * COMPANION_SCALE;
+      // They follow her down into the gully, or down through the snow after her.
+      c.low = e.low && inLower(c.x);
+      c.y = floorY(c.x, c.low) - CHEST * COMPANION_SCALE;
     });
   }
 
@@ -520,8 +727,9 @@ export class Game {
     this.pickups = this.pickups.filter((p) => p.t < p.life && !p.taken);
     if (this.mode !== 'play' || this.lightsOut) return;
 
+    const lowHere = e.low && inLower(e.x);
     for (const p of this.pickups) {
-      if (Math.abs(e.x - p.x) < EMBERS.pickupRange) {
+      if (Math.abs(e.x - p.x) < EMBERS.pickupRange && !!p.low === lowHere) {
         p.taken = true;
         e.warmth = Math.min(WARMTH.max, e.warmth + EMBERS.warmth);
         this.flare = 1;
@@ -541,7 +749,8 @@ export class Game {
     const limit = this.fire.reached ? this.level.width - 100 : this.fire.x - 150;
     const x = e.x + e.facing * between(EMBERS.ahead);
     if (x < 200 || x > limit) return;
-    this.pickups.push({ x, t: 0, life: EMBERS.life, taken: false, seed: Math.floor(Math.random() * 1e6) });
+    // On whichever floor she is on, so she can reach it.
+    this.pickups.push({ x, low: e.low && inLower(x), t: 0, life: EMBERS.life, taken: false, seed: Math.floor(Math.random() * 1e6) });
     this.embersSpawned++;
   }
 
@@ -564,6 +773,7 @@ export class Game {
   }
 
   updateLightsOut(dt) {
+    if (this.note && this.time - this.note.t > 6) this.note = null;
     const lo = this.lightsOut;
     if (!lo) return;
     lo.t += dt;
@@ -572,11 +782,15 @@ export class Game {
       const e = this.ember;
       lo.respawned = true;
       e.x = this.checkpoint.x;
+      e.low = false;
+      e.wantLow = false;
+      e.fall = null;
       e.y = groundY(e.x) - CHEST_HEIGHT;
       e.vx = 0;
       e.warmth = WARMTH.max;
       this.companions.forEach((c, i) => {
-        c.x = e.x - 44 * (i + 1);
+        c.x = Math.max(30, e.x - 44 * (i + 1));
+        c.low = false;
         c.y = groundY(c.x) - CHEST * COMPANION_SCALE;
       });
       this.camX = clamp(e.x - VIEW.w * 0.42, 0, this.level.width - VIEW.w);
@@ -593,6 +807,9 @@ export class Game {
     const out = this.lightsOut && !this.lightsOut.respawned;
     const warm = out ? 0 : clamp((w - THRESHOLDS.heavy) / (THRESHOLDS.blur - THRESHOLDS.heavy), 0, 1);
     this.audio.setMusic(warm, out ? 0 : 1 - warm);
+    // The howl of the storm: loud out in the open, muffled behind a rock, gone in the cave.
+    const wd = this.wind;
+    this.audio.setStorm(out || !wd.k ? 0 : wd.strength * Math.min(1, wd.k) * (wd.exposed ? 1 : 0.45));
 
     for (const o of this.objects) {
       if (o.state !== 'frozen') continue;

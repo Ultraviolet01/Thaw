@@ -7,13 +7,30 @@ function defaultGround(x) {
 }
 
 let ground = defaultGround;
+// A second, lower floor under part of the stage: a gully that runs into an ice cave beneath the ridge.
+// { x0, x1, floor(x), ceiling(x) }. Between x0 and x1 the main ground is the ridge above it.
+let lower = null;
 
-export function setTerrain(fn) {
+export function setTerrain(fn, low = null) {
   ground = fn || defaultGround;
+  lower = low;
 }
 
 export function groundY(x) {
   return ground(x);
+}
+
+export function lowerRoute() {
+  return lower;
+}
+
+export function inLower(x) {
+  return !!lower && x > lower.x0 && x < lower.x1;
+}
+
+// The floor under x: the cave floor for anyone down in the gully, the surface for everyone else.
+export function floorY(x, low) {
+  return low && inLower(x) ? lower.floor(x) : ground(x);
 }
 
 const SIZES = {
@@ -24,10 +41,10 @@ const SIZES = {
 };
 
 // World-space box around a frozen object, used for pulse reach and the frost effects.
-// o.depth puts an object below the surface, on a cave floor.
+// o.low puts an object on the cave floor below the ridge.
 export function objectBounds(o) {
   const s = SIZES[o.type];
-  const base = groundY(o.x) + (o.depth || 0) + 6;
+  const base = floorY(o.x, o.low) + 6;
   const cx = o.x + s.dx;
   return {
     x0: cx - s.w / 2,
