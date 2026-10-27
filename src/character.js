@@ -334,7 +334,7 @@ export class Character {
     ctx.lineTo(pot.x + pw * 1.05, pot.y - ph * 0.5);
     ctx.stroke();
     if (glow > 0.01) {
-      const hot = Math.min(1, glow) * (1 + 0.35 * (o.beat || 0));
+      const hot = Math.min(1, glow) * (1 + 0.6 * (o.beat || 0));
       for (const [dx, dy] of [[-2.4, 1.4], [0, 2.4], [2.4, 1.4]]) {
         ctx.fillStyle = `rgba(255,${Math.round(150 + 70 * hot)},80,${Math.min(1, 0.4 + 0.6 * hot)})`;
         ctx.beginPath();

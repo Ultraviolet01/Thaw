@@ -8,7 +8,7 @@ import { POT_HEIGHT } from './character.js';
 import { villagerName, villager } from './village.js';
 import { setUpSlopes, updateSlopes, digOut, shaking } from './slopes.js';
 import { setUpLake, updateLake, pulseOnIce, inStorm } from './lake.js';
-import { loadSave, saveStageStart, saveFinish, clearCurrent } from './save.js';
+import { loadSave, saveStageStart, saveFinish, clearCurrent, loadSettings, saveSettings } from './save.js';
 import { setUpHomes, updateHomes, doorX } from './home.js';
 
 // The player is a child; the villagers she finds are grown-ups.
@@ -52,6 +52,10 @@ export class Game {
     this.toldCheckpoint = false;
     // Lines that teach something are written once a visit, not every time it happens.
     this.told = new Set();
+    this.settings = loadSettings();
+    this.audio.setMaster(this.settings.volume);
+    // A short line in the corner when a setting changes.
+    this.toast = null;
     this.reset();
     this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
   }
@@ -132,6 +136,7 @@ export class Game {
 
   update(dt, input) {
     this.time += dt;
+    this.updateSettings(input);
     if (this.mode === 'title') {
       this.updateTitle(input);
       return;
@@ -215,6 +220,26 @@ export class Game {
     }
 
     this.simulate(dt, input);
+  }
+
+  // Volume (- and +) and screen shake (X), from anywhere, remembered between visits.
+  updateSettings(input) {
+    const st = this.settings;
+    let changed = null;
+    const step = (d) => {
+      st.volume = Math.max(0, Math.min(1, Math.round((st.volume + d) * 10) / 10));
+      changed = 'volume';
+    };
+    if (input.wasPressed('Minus') || input.wasPressed('NumpadSubtract')) step(-0.1);
+    if (input.wasPressed('Equal') || input.wasPressed('NumpadAdd')) step(0.1);
+    if (input.wasPressed('KeyX')) {
+      st.shake = !st.shake;
+      changed = 'shake';
+    }
+    if (!changed) return;
+    if (changed === 'volume') this.audio.setMaster(this.settings.volume);
+    saveSettings(this.settings);
+    this.toast = { text: changed === 'volume' ? `volume ${Math.round(this.settings.volume * 100)}%` : `screen shake ${this.settings.shake ? 'on' : 'off'}`, t: this.time };
   }
 
   // The title: continue the walk in progress, begin a new one, or pick up any stage reached before.

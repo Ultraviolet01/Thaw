@@ -422,7 +422,7 @@ export class Renderer {
     c.clip();
     // The ground shaking: before an avalanche, as it comes down, and in a frost quake.
     const shake = game.avalanches ? shaking(game) : 0;
-    if (shake > 0.02) c.translate((Math.random() - 0.5) * 7 * shake, (Math.random() - 0.5) * 5 * shake);
+    if (shake > 0.02 && game.settings.shake) c.translate((Math.random() - 0.5) * 7 * shake, (Math.random() - 0.5) * 5 * shake);
 
     if (!this.lowDetail && (look.blur > 0.05 || look.sat < 0.99)) {
       c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)}) brightness(${look.bright.toFixed(2)})`;
@@ -471,7 +471,7 @@ export class Renderer {
     if (game.ember.burial || game.ember.unburied) this.drawBurial(c, game);
     if (!(game.intro && game.intro.t < game.introLock()) && game.mode !== 'ending') this.drawBar(c, game);
     if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
-    if (game.mode === 'paused') this.drawPause(c);
+    if (game.mode === 'paused') this.drawPause(c, game);
     if (game.mode === 'stageEnd') {
       this.drawStageEndText(c, game);
       // Ready the frost pattern for the walk on, while nothing is moving.
@@ -491,6 +491,8 @@ export class Renderer {
       c.textAlign = 'left';
       c.fillText('muted (M)', 28, VIEW_H - 24);
     }
+    this.drawToast(c, game);
+    this.drawTurnHint(c);
     c.restore();
   }
 
@@ -2755,7 +2757,7 @@ export class Renderer {
     // Any stage reached before can be walked again, as things stood when it began.
     if (sv.reached > 0) {
       const names = game.levels.slice(0, sv.reached + 1).map((L, i) => `${i + 1}  ${L.name.toLowerCase()}`);
-      c.font = `300 14px ${SERIF}`;
+      c.font = `300 15px ${SERIF}`;
       c.fillStyle = `rgba(22,40,50,${0.72 * fade})`;
       c.fillText('or press the number of a stage:', cx, cy + 100);
       c.fillText(names.join('      '), cx, cy + 122);
@@ -2763,14 +2765,16 @@ export class Renderer {
     // The record of finished walks: the best one, and how many of the endings have been seen.
     if (sv.finished > 0 && sv.best) {
       const trees = game.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'tree').length, 0);
-      c.font = `italic 300 14px ${SERIF}`;
+      c.font = `italic 300 15px ${SERIF}`;
       c.fillStyle = `rgba(92,52,22,${0.85 * fade})`;
       c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 166);
       c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}`, cx, cy + 188);
     }
-    c.font = `italic 300 14px ${SERIF}`;
+    c.font = `italic 300 15px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.6 * fade})`;
     c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 30);
+    this.drawToast(c, game);
+    this.drawTurnHint(c);
     c.restore();
     // Out of black.
     if (t < 1.5) {
@@ -3161,7 +3165,26 @@ export class Renderer {
     });
   }
 
-  drawPause(c) {
+  // A phone held upright shows the game as a thin strip: ask for it sideways.
+  drawTurnHint(c) {
+    if (!(innerHeight > innerWidth * 1.1)) return;
+    c.font = `italic 300 28px ${SERIF}`;
+    c.textAlign = 'center';
+    c.fillStyle = 'rgba(22,40,50,0.85)';
+    c.fillText('turn your phone sideways to play', VIEW.w / 2, 60);
+  }
+
+  // A setting just changed: said briefly in the corner.
+  drawToast(c, game) {
+    const tt = game.toast;
+    if (!tt || game.time - tt.t > 1.8) return;
+    c.font = `15px ${SERIF}`;
+    c.textAlign = 'right';
+    c.fillStyle = `rgba(22,40,50,${0.85 * Math.min(1, (1.8 - (game.time - tt.t)) / 0.4)})`;
+    c.fillText(tt.text, VIEW.w - 28, VIEW_H - 24);
+  }
+
+  drawPause(c, game) {
     c.fillStyle = 'rgba(200,222,235,0.6)';
     c.fillRect(0, 0, VIEW.w, VIEW_H);
     c.textAlign = 'center';
@@ -3172,8 +3195,10 @@ export class Renderer {
     const lines = [
       'move: arrows, WASD or left stick   ·   at a cairn, down takes the low way',
       'pulse: hold space or A',
-      'mute: M   ·   replay this stage: R   ·   full screen: F',
+      'mute: M   ·   volume: - and +   ·   screen shake: X   ·   full screen: F',
+      'replay this stage: R',
       'enter to start over from the beginning',
+      'on a touch screen: hold left or right to walk, the middle to pulse, swipe down for the low way',
       'esc or start to resume',
     ];
     lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32));
@@ -3187,7 +3212,7 @@ export class Renderer {
     c.font = `300 16px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.9 * a})`;
     c.fillText(`STAGE ${game.stage + 1} COMPLETE`.split('').join(' '), VIEW.w / 2, 96);
-    c.font = `300 14px ${SERIF}`;
+    c.font = `300 15px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.7 * a})`;
     c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW.w / 2, 122);
     const b = clamp01((T - 5.8) / 1);
@@ -3204,18 +3229,18 @@ export class Renderer {
     const carries = game.level.carries || {};
     const carried = Object.keys(game.choices).map((k) => carries[k] && carries[k][game.choices[k]]).filter(Boolean);
     if (carried.length) {
-      c.font = `italic 300 15px ${SERIF}`;
+      c.font = `italic 300 16px ${SERIF}`;
       c.fillText(carried.map((x) => x.text).join('  '), VIEW.w / 2, 308);
     }
     this.drawVillage(c, game, b);
     // At the end of the whole walk: how many of the endings have now been seen.
     if (game.ending) {
-      c.font = `italic 300 15px ${SERIF}`;
+      c.font = `italic 300 16px ${SERIF}`;
       c.fillStyle = `rgba(22,40,50,${0.8 * b})`;
       const found = `endings found: ${game.saved.endings.length} of ${ENDINGS.length}`;
       c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 474);
     }
-    c.font = `300 14px ${SERIF}`;
+    c.font = `300 15px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
     const on = game.hasNextStage() ? 'space to walk on' : 'space to keep wandering';
     // Along the bottom, clear of the group standing at the fire.

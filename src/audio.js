@@ -40,6 +40,8 @@ const HUM_BASE = 1318.51;
 const FIRE_SRC = 'audio/sfx/fire.mp3';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+// The player's master volume, applied to every sound.
+let MASTER = 1;
 
 // One sound effect, with a few players kept ready and reused. Making a new player for every footstep or
 // heartbeat makes the browser load and decode the file again each time, which can stall a frame.
@@ -59,7 +61,7 @@ class SoundPool {
     el.pause();
     el.currentTime = 0;
     el.playbackRate = rate;
-    el.volume = clamp01(volume);
+    el.volume = clamp01(volume * MASTER);
     el.muted = muted;
     el.play().catch(() => {});
   }
@@ -121,8 +123,8 @@ class FileLoop {
       ka = 0;
       kb = 1;
     }
-    a.volume = clamp01(this.vol * ka);
-    b.volume = clamp01(this.vol * kb);
+    a.volume = clamp01(this.vol * ka * MASTER);
+    b.volume = clamp01(this.vol * kb * MASTER);
     if (this.vol === 0 && this.target === 0) {
       this.els.forEach((e) => e.pause());
       clearInterval(this.timer);
@@ -284,7 +286,7 @@ export class GameAudio {
       if (this.voiceToken !== token) return;
       t += 0.05;
       const v = t < 0.3 ? t / 0.3 : Math.max(0, 1 - (t - 0.3) / 2.2);
-      el.volume = 0.45 * v;
+      el.volume = 0.45 * v * MASTER;
       if (v <= 0) {
         el.pause();
         return;
@@ -356,7 +358,7 @@ export class GameAudio {
     if (this.theme) return;
     const el = this.themePreload || new Audio(THEME_SRC);
     this.themePreload = null;
-    el.volume = 0.85;
+    el.volume = 0.85 * MASTER;
     el.muted = this.muted;
     el.addEventListener('error', () => { this.themeFailed = true; });
     el.addEventListener('ended', () => { this.themeEnded = true; });
@@ -384,8 +386,8 @@ export class GameAudio {
     this.theme = el;
     const rise = () => {
       if (this.theme !== el) return;
-      el.volume = Math.min(0.85, el.volume + 0.04);
-      if (el.volume < 0.85) setTimeout(rise, 50);
+      el.volume = Math.min(0.85 * MASTER, el.volume + 0.04 * MASTER);
+      if (el.volume < 0.85 * MASTER) setTimeout(rise, 50);
     };
     rise();
   }
@@ -404,6 +406,13 @@ export class GameAudio {
       else { el.pause(); this.themeEnded = true; }
     };
     step();
+  }
+
+  // The player's master volume, 0 to 1.
+  setMaster(v) {
+    const was = MASTER;
+    MASTER = clamp01(v);
+    if (this.theme && was > 0) this.theme.volume = clamp01((this.theme.volume / was) * MASTER);
   }
 
   toggleMute() {

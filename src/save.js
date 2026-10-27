@@ -63,6 +63,25 @@ export function saveFinish(savedCount, trees) {
   return ending;
 }
 
+// The player's settings, kept apart from the walk: volume and screen shake.
+const SETTINGS = 'thaw.settings.v1';
+
+export function loadSettings() {
+  try {
+    return { volume: 1, shake: true, ...JSON.parse(localStorage.getItem(SETTINGS) || '{}') };
+  } catch (e) {
+    return { volume: 1, shake: true };
+  }
+}
+
+export function saveSettings(s) {
+  try {
+    localStorage.setItem(SETTINGS, JSON.stringify(s));
+  } catch (e) {
+    // Not remembered; the setting still holds for this visit.
+  }
+}
+
 // "Start over from the beginning": forget the walk in progress, keep the record and the stages reached.
 export function clearCurrent() {
   const d = loadSave();

@@ -16,6 +16,29 @@ export class Input {
     addEventListener('keyup', (e) => this.down.delete(e.code));
     addEventListener('blur', () => this.down.clear());
     addEventListener('pointerdown', () => this.pressed.add('Pointer'));
+
+    // Touch: hold the left or right third of the screen to walk, the middle to pulse; swipe down in the middle
+    // to take the low way at a cairn. A tap is also "any key".
+    this.touches = new Map();
+    const zone = (x) => (x < innerWidth / 3 ? 'left' : x > (innerWidth * 2) / 3 ? 'right' : 'pulse');
+    addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      const z = zone(e.clientX);
+      this.touches.set(e.pointerId, { zone: z, y0: e.clientY, y: e.clientY });
+      if (z === 'pulse') this.pressed.add('TouchPulse');
+    });
+    addEventListener('pointermove', (e) => {
+      const t = this.touches.get(e.pointerId);
+      if (t) t.y = e.clientY;
+    });
+    const lift = (e) => this.touches.delete(e.pointerId);
+    addEventListener('pointerup', lift);
+    addEventListener('pointercancel', lift);
+  }
+
+  touch(z) {
+    for (const t of this.touches.values()) if (t.zone === z && !(z === 'pulse' && t.y - t.y0 > 50)) return true;
+    return false;
   }
 
   poll() {
@@ -56,6 +79,8 @@ export class Input {
     let v = 0;
     if (this.key('ArrowLeft', 'KeyA')) v -= 1;
     if (this.key('ArrowRight', 'KeyD')) v += 1;
+    if (this.touch('left')) v -= 1;
+    if (this.touch('right')) v += 1;
     return v || this.pad.x;
   }
 
@@ -63,15 +88,16 @@ export class Input {
     let v = 0;
     if (this.key('ArrowUp', 'KeyW')) v -= 1;
     if (this.key('ArrowDown', 'KeyS')) v += 1;
+    for (const t of this.touches.values()) if (t.zone === 'pulse' && t.y - t.y0 > 50) v = 1;
     return v || this.pad.y;
   }
 
   get pulseHeld() {
-    return this.key('Space') || this.pad.a;
+    return this.key('Space') || this.pad.a || this.touch('pulse');
   }
 
   get pulsePressed() {
-    return this.wasPressed('Space') || (this.pad.a && !this.prevPad.a);
+    return this.wasPressed('Space') || this.wasPressed('TouchPulse') || (this.pad.a && !this.prevPad.a);
   }
 
   get pausePressed() {
