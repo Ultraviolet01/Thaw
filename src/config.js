@@ -87,3 +87,24 @@ export const CREVASSE = {
   fallSeconds: 0.7,
   fallWarmth: 5, // the landing knocks her coal low
 };
+
+// Avalanches: a rumble and small slides first, then the snow comes down the chute and across the path.
+export const AVALANCHE = {
+  rumble: 4, // seconds of warning
+  shepherdRumble: 6, // with the shepherd walking with her, the warning comes this early
+  slide: 2.6,
+  hit: [0.9, 1.9], // when, in the slide, the snow is across the path
+  buryPulses: 6, // pulses to dig herself out (each companion adds one, the smith doubles it)
+  buriedChill: 0.8, // extra warmth lost per second while buried
+  millerLoss: 4, // a new slide over the miller undoes this much digging
+};
+
+// Frost quakes: the ground shakes, then the icicles over the cliff path fall where their shadows show.
+export const QUAKE = {
+  tremor: 1.6,
+  fall: 0.45,
+  regrow: 5,
+  hitRange: 26,
+  hitWarmth: 8,
+  stun: 0.6,
+};

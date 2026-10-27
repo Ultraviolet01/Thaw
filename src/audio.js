@@ -143,7 +143,9 @@ export class GameAudio {
     this.stageMusic = new FileLoop(STAGE_MUSIC_SRC, 4);
     this.coldMusic = new FileLoop(COLD_MUSIC_SRC, 4);
     this.restMusic = new FileLoop(REST_MUSIC_SRC, 4);
-    this.loops = [this.wind, this.storm, this.fire, this.stageMusic, this.coldMusic, this.restMusic];
+    // The mountain's rumble: the storm recording played at half speed, an octave down.
+    this.rumble = new FileLoop(STORM_SRC, 2.5, 0.5);
+    this.loops = [this.wind, this.storm, this.fire, this.stageMusic, this.coldMusic, this.restMusic, this.rumble];
     // Every sound effect is loaded once, while the title screen is up.
     this.sfx = {
       heart: new SoundPool(HEART_SRC),
@@ -170,6 +172,31 @@ export class GameAudio {
   // 0 = a breath of wind, 1 = a gale.
   setWind(amount) {
     this.wind.set(0.18 + 0.62 * clamp01(amount));
+  }
+
+  // The mountain rumbling: 0 = still, 1 = an avalanche coming down.
+  setRumble(amount) {
+    this.rumble.set(0.95 * clamp01(amount));
+  }
+
+  // An avalanche lets go: a deep crack of snow breaking away.
+  avalanche() {
+    if (this.muted) return;
+    this.sfx.crack.play(0.95, 0.5, false);
+    this.sfx.refreeze.play(0.9, 0.6, false);
+  }
+
+  // A frost quake: the ground cracks with a boom.
+  quake() {
+    if (this.muted) return;
+    this.sfx.crack.play(1, 0.45, false);
+  }
+
+  // Icicles shattering on the path.
+  icicles() {
+    if (this.muted) return;
+    this.sfx.crack.play(0.8, 1.35, false);
+    this.sfx.crack.play(0.6, 1.6, false);
   }
 
   // The howling storm, for the hazards: 0 = none, 1 = full.

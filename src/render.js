@@ -1,9 +1,10 @@
-import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND } from './config.js';
+import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND, AVALANCHE, QUAKE } from './config.js';
 import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE } from './village.js';
+import { rumbleSeconds, shaking } from './slopes.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -390,6 +391,9 @@ export class Renderer {
     c.beginPath();
     c.rect(0, 0, VIEW.w, VIEW_H);
     c.clip();
+    // The ground shaking: before an avalanche, as it comes down, and in a frost quake.
+    const shake = game.avalanches ? shaking(game) : 0;
+    if (shake > 0.02) c.translate((Math.random() - 0.5) * 7 * shake, (Math.random() - 0.5) * 5 * shake);
 
     if (look.blur > 0.05 || look.sat < 0.99) {
       c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)}) brightness(${look.bright.toFixed(2)})`;
@@ -428,6 +432,7 @@ export class Renderer {
       c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
+    if (game.ember.burial) this.drawBurial(c, game);
     if (!(game.intro && game.intro.t < game.introLock())) this.drawBar(c, game);
     if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
@@ -461,12 +466,16 @@ export class Renderer {
     this.drawSky(s, cam, t);
     s.save();
     s.translate(-cam, 0);
+    this.drawMountainside(s, game, t);
     this.drawGround(s, cam);
     this.drawStageGround(s, cam, game, t);
     for (const o of game.objects) this.drawObject(s, o, t);
     this.drawPickups(s, game, t);
     this.drawFire(s, game.fire, t);
+    // The avalanche pours down behind the figures; anyone it reaches outside the overhang is buried.
+    this.drawSlides(s, game, t);
     this.drawFigures(s, game, dt, t);
+    this.drawCliffs(s, game, t);
     this.drawCaveDark(s, game, t);
     this.drawLights(s, game, t);
     this.drawMist(s, t);
@@ -610,6 +619,282 @@ export class Renderer {
         }
       }
     }
+  }
+
+  // ---------- Stage 3: the mountain ----------
+
+  // The mountainside above the path: a slope of snow and rock rising off the top of the screen, with a paler
+  // chute down its middle to each avalanche run. Early on, a far-off slide that cannot reach her.
+  drawMountainside(s, game, t) {
+    const d = game.distant;
+    if (d && d.t >= 0 && d.t < 6) {
+      const a = Math.min(1, d.t / 0.6) * Math.min(1, (6 - d.t) / 1.5);
+      const k = Math.min(1, d.t / 3);
+      s.save();
+      for (let i = 0; i < 22; i++) {
+        const q = i / 21;
+        if (q > k) break;
+        const x = d.x - 160 + q * 220 + Math.sin(i * 1.3) * 8;
+        const y = 300 + q * 120;
+        s.fillStyle = `rgba(236,243,248,${0.28 * a * (1 - 0.5 * q)})`;
+        s.beginPath();
+        s.ellipse(x, y, 10 + 22 * q, 5 + 10 * q, -0.5, 0, Math.PI * 2);
+        s.fill();
+      }
+      s.restore();
+    }
+    for (const av of game.avalanches || []) {
+      if (av.x1 < game.camX - 500 || av.x0 > game.camX + VIEW.w + 500) continue;
+      const cx = (av.x0 + av.x1) / 2;
+      const half = (av.x1 - av.x0) / 2;
+      // Uneven, lopsided shoulders: a long slope on one side, a steeper one on the other.
+      const rough = (y, k) => Math.sin(y * 0.021 + k) * 22 + Math.sin(y * 0.063 + k * 2) * 9;
+      const spread = (y) => Math.pow(Math.max(0, (y + 160) / 760), 0.85);
+      const left = (y) => cx + 40 - (half + 420) * spread(y) + rough(y, av.x0 * 0.01);
+      const right = (y) => cx + 40 + (half + 230) * spread(y) + rough(y, av.x1 * 0.01);
+      const g = s.createLinearGradient(0, -60, 0, 620);
+      g.addColorStop(0, '#3a5260');
+      g.addColorStop(1, '#68818e');
+      s.fillStyle = g;
+      s.beginPath();
+      s.moveTo(left(620), 640);
+      for (let y = 600; y >= -60; y -= 30) s.lineTo(left(y), y);
+      for (let y = -60; y <= 600; y += 30) s.lineTo(right(y), y);
+      s.lineTo(right(620), 640);
+      s.closePath();
+      s.fill();
+      // Rock showing through here and there, mostly on the steeper side.
+      s.fillStyle = 'rgba(24,36,45,0.4)';
+      for (let i = 0; i < 8; i++) {
+        const y = 30 + ((hash(131, i) + 1) / 2) * 470;
+        const steep = i % 3 !== 0;
+        const x0 = steep ? right(y) : left(y);
+        const x = x0 + (steep ? -1 : 1) * (20 + ((hash(137, i) + 1) / 2) * 70);
+        const w = 14 + ((hash(139, i) + 1) / 2) * 26;
+        s.beginPath();
+        s.moveTo(x - w, y + 4);
+        s.lineTo(x - w * 0.3, y - 6 - w * 0.2);
+        s.lineTo(x + w * 0.6, y - 3);
+        s.lineTo(x + w, y + 5);
+        s.closePath();
+        s.fill();
+      }
+      // The chute: a smooth, paler groove of snow down the middle.
+      for (const [w, a] of [[1, 0.1], [0.7, 0.12], [0.42, 0.14]]) {
+        s.fillStyle = `rgba(214,228,236,${a})`;
+        s.beginPath();
+        s.moveTo(cx - 40 * w, -60);
+        s.quadraticCurveTo(cx - (half + 30) * w * 0.6, 300, cx - (half + 30) * w, groundY(cx - half * w));
+        s.lineTo(cx + (half + 30) * w, groundY(cx + half * w));
+        s.quadraticCurveTo(cx + (half + 30) * w * 0.6, 300, cx + 40 * w, -60);
+        s.closePath();
+        s.fill();
+      }
+      // The warning: small slides trickling down the chute while it rumbles.
+      if (av.phase === 'rumble') {
+        const k = av.t / rumbleSeconds(game);
+        const n = Math.round(4 + 14 * k);
+        for (let i = 0; i < n; i++) {
+          const q = (t * (0.5 + 0.4 * hash(103, i)) + i / n) % 1;
+          const x = cx + hash(107, i) * half * 0.8 * q;
+          const y = q * (groundY(x) - 60);
+          s.fillStyle = `rgba(240,246,250,${0.8 * (1 - q * 0.5)})`;
+          s.beginPath();
+          s.ellipse(x, y, 4 + 6 * k, 2.5 + 3 * k, 0.3, 0, Math.PI * 2);
+          s.fill();
+        }
+      }
+    }
+  }
+
+  // The avalanche itself: a white front pouring down the chute, then a wall of snow and powder across the path.
+  // The rock overhang is drawn over it: the snow goes over the top, and the hollow beneath stays clear.
+  drawSlides(s, game, t) {
+    for (const av of game.avalanches || []) {
+      if (av.x1 < game.camX - 300 || av.x0 > game.camX + VIEW.w + 300) continue;
+      if (av.phase === 'slide') {
+        const T = av.t;
+        const cx = (av.x0 + av.x1) / 2;
+        const fade = T < AVALANCHE.hit[1] ? 1 : Math.max(0, 1 - (T - AVALANCHE.hit[1]) / (AVALANCHE.slide - AVALANCHE.hit[1]));
+        const down = Math.min(1, T / AVALANCHE.hit[0]);
+        const spread = Math.min(1, Math.max(0, (T - AVALANCHE.hit[0] * 0.7) / 0.5));
+        s.save();
+        s.globalAlpha = fade;
+        const frontY = down * (groundY(cx) - 20);
+        for (let i = 0; i < 26; i++) {
+          const q = i / 26;
+          if (q > down) break;
+          const y = -40 + q * (frontY + 40);
+          const x = cx + Math.sin(i * 2.3 + t * 3) * 30 * q;
+          glow(s, x, y, 50 + 70 * q, '244,248,251', 0.9);
+        }
+        if (spread > 0) {
+          const w = (av.x1 - av.x0 + 160) * spread;
+          for (let i = 0; i < 30; i++) {
+            const q = i / 29;
+            const x = cx - w / 2 + q * w;
+            const h = 90 + 60 * Math.sin(i * 1.9 + t * 4);
+            glow(s, x, groundY(x) - h * 0.4, h, '246,249,252', 0.95);
+          }
+          s.fillStyle = 'rgba(236,243,247,0.92)';
+          s.beginPath();
+          s.moveTo(cx - w / 2, VIEW_H);
+          for (let x = cx - w / 2; x <= cx + w / 2; x += 12) s.lineTo(x, groundY(x) - 70 - 25 * Math.sin(x * 0.05 + t * 6));
+          s.lineTo(cx + w / 2, VIEW_H);
+          s.closePath();
+          s.fill();
+        }
+        s.restore();
+      }
+      if (av.overhang) this.drawOverhang(s, av, av.phase === 'slide' && av.t > AVALANCHE.hit[0] * 0.7 ? 1 : 0);
+    }
+  }
+
+  // A rock arch over the path: a slab overhead, held up by a pillar on its downhill side.
+  drawOverhang(s, av, pouring) {
+    const o = av.overhang;
+    const gy = groundY(o.x1);
+    const top = groundY(o.x0) - 118;
+    // While the snow pours past, the hollow under the rock stays dark and clear.
+    if (pouring) {
+      const g = s.createLinearGradient(o.x0 - 20, 0, o.x1, 0);
+      g.addColorStop(0, 'rgba(40,60,72,0)');
+      g.addColorStop(0.35, 'rgba(40,60,72,0.85)');
+      g.addColorStop(1, 'rgba(40,60,72,0.9)');
+      s.fillStyle = g;
+      s.beginPath();
+      s.moveTo(o.x0 - 20, top + 12);
+      s.quadraticCurveTo(o.x0 + 40, top + 24, o.x1, top + 10);
+      s.lineTo(o.x1, groundY(o.x1) + 2);
+      s.lineTo(o.x0 - 20, groundY(o.x0 - 20) + 2);
+      s.closePath();
+      s.fill();
+    }
+    s.fillStyle = '#1c2a33';
+    s.beginPath();
+    s.moveTo(o.x0 - 40, top - 10);
+    s.quadraticCurveTo(o.x0 + 30, top - 34, o.x1 + 40, top - 18);
+    s.lineTo(o.x1 + 44, top + 10);
+    s.quadraticCurveTo(o.x0 + 40, top + 22, o.x0 - 34, top + 14);
+    s.closePath();
+    s.fill();
+    s.beginPath();
+    s.moveTo(o.x1 - 2, top + 6);
+    s.lineTo(o.x1 + 34, top + 4);
+    s.quadraticCurveTo(o.x1 + 46, gy - 30, o.x1 + 42, gy + 4);
+    s.lineTo(o.x1 - 6, gy + 4);
+    s.quadraticCurveTo(o.x1 - 12, gy - 40, o.x1 - 2, top + 6);
+    s.fill();
+    s.fillStyle = 'rgba(224,237,244,0.9)';
+    s.beginPath();
+    s.moveTo(o.x0 - 36, top - 12);
+    s.quadraticCurveTo(o.x0 + 30, top - 44, o.x1 + 38, top - 22);
+    s.quadraticCurveTo(o.x0 + 30, top - 30, o.x0 - 36, top - 12);
+    s.fill();
+  }
+
+  // The cliff path: a ledge of rock overhead with icicles. Before they fall, their shadows show on the snow.
+  drawCliffs(s, game, t) {
+    for (const q of game.quakes || []) {
+      if (q.x1 < game.camX - 200 || q.x0 > game.camX + VIEW.w + 200) continue;
+      const ledge = (x) => groundY(x) - 178;
+      // An overhanging cliff: rock rising off the top of the screen, its underside over the path.
+      const a0 = q.x0 - 140;
+      const a1 = q.x1 + 140;
+      const g = s.createLinearGradient(0, -40, 0, 440);
+      g.addColorStop(0, '#2c3d48');
+      g.addColorStop(1, '#1a2730');
+      s.fillStyle = g;
+      s.beginPath();
+      s.moveTo(a0 - 60, -40);
+      s.quadraticCurveTo(a0 - 30, ledge(a0) - 120, a0, ledge(a0) - 30);
+      for (let x = a0; x <= a1; x += 20) s.lineTo(x, ledge(x) - 4 + hash(109, x) * 6);
+      s.quadraticCurveTo(a1 + 40, ledge(a1) - 140, a1 + 90, -40);
+      s.closePath();
+      s.fill();
+      // Strata in the rock, and snow caught on its ledges.
+      s.strokeStyle = 'rgba(120,150,165,0.18)';
+      s.lineWidth = 2;
+      for (let i = 1; i <= 4; i++) {
+        s.beginPath();
+        for (let x = a0 + 20 * i; x <= a1 - 20 * i; x += 30) (x === a0 + 20 * i ? s.moveTo : s.lineTo).call(s, x, ledge(x) - 40 * i + hash(113, x + i) * 8);
+        s.stroke();
+      }
+
+      for (const ic of q.icicles) {
+        const top = ledge(ic.x);
+        const gy = groundY(ic.x);
+        // Shadows on the snow while the ground shakes and as they fall.
+        if (q.phase === 'tremor' || (q.phase === 'fall' && ic.state === 'falling')) {
+          const k = q.phase === 'tremor' ? q.t / QUAKE.tremor : 1;
+          s.fillStyle = `rgba(20,35,45,${0.15 + 0.35 * k})`;
+          s.beginPath();
+          s.ellipse(ic.x, gy + 2, 16 + 8 * k, 4, 0, 0, Math.PI * 2);
+          s.fill();
+        }
+        if (ic.state === 'broken') {
+          if (ic.t < 1.5) {
+            s.fillStyle = `rgba(210,235,245,${0.8 * (1 - ic.t / 1.5)})`;
+            for (let i = 0; i < 5; i++) s.fillRect(ic.x - 12 + i * 6, gy - 2 - (i % 2) * 2, 4, 2);
+          }
+          continue;
+        }
+        let y = top;
+        if (ic.state === 'falling') y += Math.pow(q.t / QUAKE.fall, 2) * (gy - top - 30);
+        const shiver = q.phase === 'tremor' ? Math.sin(t * 60 + ic.x) * 1.5 : 0;
+        s.fillStyle = 'rgba(200,232,245,0.9)';
+        s.beginPath();
+        s.moveTo(ic.x - 6 + shiver, y);
+        s.lineTo(ic.x + shiver, y + 34);
+        s.lineTo(ic.x + 6 + shiver, y);
+        s.closePath();
+        s.fill();
+      }
+    }
+  }
+
+  // Someone buried by an avalanche: a mound of snow over them, the glow of their pot showing through.
+  // It wears down as she digs, and is gone as they thaw.
+  drawBuried(s, o, fig, warm, t) {
+    if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t, ground: SNOW_GROUND });
+    const k = o.state === 'frozen' ? 1 - o.progress / o.pulses : o.state === 'melting' ? 0.15 * (1 - o.meltT) : 0;
+    if (k <= 0) return;
+    const gy = groundY(o.x) + 4;
+    const h = 28 + 92 * k;
+    s.fillStyle = '#dbe8ef';
+    s.beginPath();
+    s.moveTo(o.x - 70, gy);
+    s.quadraticCurveTo(o.x - 40, gy - h, o.x + 5, gy - h * 0.95);
+    s.quadraticCurveTo(o.x + 50, gy - h * 0.9, o.x + 80, gy);
+    s.closePath();
+    s.fill();
+    s.strokeStyle = 'rgba(150,180,195,0.6)';
+    s.lineWidth = 1.5;
+    s.stroke();
+    s.save();
+    s.globalCompositeOperation = 'lighter';
+    glow(s, o.x + 4, gy - h * 0.45, 26, '255,170,90', 0.35 + 0.1 * Math.sin(t * 2));
+    s.restore();
+  }
+
+  // Buried: snow all around, a pocket of air in front of her that grows with each pulse.
+  drawBurial(c, game) {
+    const e = game.ember;
+    const b = e.burial;
+    const x = e.x - game.camX;
+    const y = e.y;
+    const R = 34 + 120 * (b.done / b.need);
+    c.save();
+    c.fillStyle = 'rgba(214,228,236,0.95)';
+    blobPath(c, x, y, R, 7, game.time);
+    c.rect(0, 0, VIEW.w, VIEW_H);
+    c.fill('evenodd');
+    // What to do, written on the snow itself, since the frost behind it cannot be seen.
+    c.font = `56px ${HAND}`;
+    c.textAlign = 'center';
+    c.fillStyle = 'rgba(30,50,62,0.7)';
+    c.fillText('pulse to dig yourself out', VIEW.w / 2, 200);
+    c.restore();
   }
 
   // ---------- Stage features: the ice cave, the snow bridge, rocks, the cairn, the old camp ----------
@@ -1042,6 +1327,10 @@ export class Renderer {
     // A companion who froze again keeps the body they had.
     const fig = this.figures[o.figId ?? o.home];
     if (fig) fig.ref.low = !!o.low;
+    if (o.buried && !o.relapsed) {
+      this.drawBuried(s, o, fig, warm, t);
+      return;
+    }
     // Their fire went out with everyone else's: no pot, arms wrapped round themselves.
     if (fig) fig.draw(s, { frozen: 1 - warm, glow: 0, pot: false, t, ground: SNOW_GROUND });
   }

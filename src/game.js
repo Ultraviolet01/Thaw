@@ -1,11 +1,12 @@
 import {
   VIEW, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
-  WIND, CAVE, CREVASSE,
+  WIND, CAVE, CREVASSE, AVALANCHE,
 } from './config.js';
 import { groundY, floorY, inLower, lowerRoute, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
 import { POT_HEIGHT } from './character.js';
 import { villagerName } from './village.js';
+import { setUpSlopes, updateSlopes, digOut, shaking } from './slopes.js';
 
 // The player is a child; the villagers she finds are grown-ups.
 export const PLAYER_SCALE = 1.4;
@@ -57,7 +58,7 @@ export class Game {
     this.note = null;
     this.stageRecorded = false;
     // low: down in the gully or the ice cave. wantLow: she has chosen the gully at the cairn.
-    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max, low: false, wantLow: false, fall: null };
+    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max, low: false, wantLow: false, fall: null, burial: null, stun: 0 };
     this.checkpoint = { ...L.spawn };
     this.objects = L.objects.map((o, i) => ({
       ...o,
@@ -79,6 +80,7 @@ export class Game {
     });
     this.wind = { phase: 'calm', t: 0, next: 2, strength: 0, k: 0, exposed: false };
     this.bridge = L.crevasse ? { ...L.crevasse, intact: true, stress: 0, creaked: false } : null;
+    setUpSlopes(this, L);
     this.route = null;
     this.windTold = false;
     this.rings = [];
@@ -98,7 +100,7 @@ export class Game {
     this.freeRoam = false;
     this.hintFlags = {
       moved: false, pulsed: false, lanternLit: false, rested: false, forkChosen: false, lostLantern: false, lostWanderer: false,
-      gusted: false, sheltered: false, routeChosen: false,
+      gusted: false, sheltered: false, routeChosen: false, avalanched: false, quaked: false,
     };
     this.choices = {};
     this.barFlash = 6;
@@ -304,6 +306,8 @@ export class Game {
     const e = this.ember;
     const L = this.level;
     const falling = e.fall && e.fall.t < CREVASSE.fallSeconds;
+    // Buried she can only pulse; knocked down by an icicle she can do nothing for a moment.
+    e.stun = Math.max(0, e.stun - dt);
     const controllable = this.mode === 'play' && !this.lightsOut && !falling && !(this.intro && this.intro.t < this.introLock());
 
     this.updateWind(dt);
@@ -316,7 +320,7 @@ export class Game {
       this.holdLock = true;
       this.say('the wind breaks your pulse', e.x);
     }
-    const wantPulse = controllable && !this.holdLock && input.pulseHeld && gust <= 0.3;
+    const wantPulse = controllable && e.stun <= 0 && !this.holdLock && input.pulseHeld && gust <= 0.3;
     if (wantPulse && !this.pulsing) {
       this.pulsing = true;
       this.beatTimer = this.beatInterval();
@@ -325,7 +329,7 @@ export class Game {
 
     // Walking. The figure cannot move while pulsing. e.x is the feet, e.y the ember in the chest.
     let ax = 0;
-    if (controllable && !this.pulsing) {
+    if (controllable && !this.pulsing && !e.burial && e.stun <= 0) {
       ax = Math.max(-1, Math.min(1, input.moveX));
       if (Math.abs(ax) > 0.1) this.hintFlags.moved = true;
     }
@@ -355,6 +359,11 @@ export class Game {
     if (e.x < 20) { e.x = 20; e.vx = 0; }
     if (e.x > L.width - 20) { e.x = L.width - 20; e.vx = 0; }
     this.updateRoute(before, e.x, dt);
+    if (e.burial) {
+      e.x = before;
+      e.vx = 0;
+    }
+    updateSlopes(this, dt);
     e.y = floorY(e.x, e.low) - CHEST_HEIGHT;
     if (e.fall) e.fall.t += dt;
 
@@ -513,6 +522,11 @@ export class Game {
     for (const c of this.companions) this.rings.push({ x: c.x, y: c.y, t: 0, r: r * 0.45, strong: false });
     this.audio.pulse();
     this.hintFlags.pulsed = true;
+    // Buried, a pulse melts the snow around her instead of reaching anything else.
+    if (e.burial) {
+      digOut(this);
+      return;
+    }
 
     for (const o of this.objects) {
       if (o.state !== 'frozen') continue;
@@ -521,7 +535,9 @@ export class Game {
       // At a fork, whatever you crack first is your choice: the other side no longer takes your warmth.
       if (o.fork && o.progress === 0 && this.objects.some((x) => x !== o && x.fork === o.fork && x.state === 'frozen' && x.progress > 0)) continue;
       // Every companion's fire joins your pulse, so thawing takes fewer pulses the more of you there are.
-      o.progress += 1 + this.companions.length;
+      // Digging someone out of the snow goes twice as fast with the smith.
+      const smith = o.buried && this.companions.some((c) => c.home === 'smith') ? 2 : 1;
+      o.progress += (1 + this.companions.length) * smith;
       o.hit = 1;
       this.audio.crack();
       o.progress = Math.min(o.progress, o.pulses);
@@ -585,6 +601,8 @@ export class Game {
     }
     // The cave is out of the wind but slowly cold, unless she carries the lantern's flame.
     if (inCave && !nearHeat && !this.hasFlame()) delta -= CAVE.chill;
+    // Buried in snow, the cold gets in.
+    if (e.burial) delta -= AVALANCHE.buriedChill;
     // A gust strips warmth away. Behind a rock it does not reach her.
     if (this.wind.exposed && this.wind.phase === 'gust') delta -= WIND.gustDrain * this.wind.k * this.wind.strength;
 
@@ -652,6 +670,12 @@ export class Game {
     this.stageRecorded = true;
     const L = this.ledger;
     for (const c of this.companions) if (c.home && !L.saved.includes(c.home)) L.saved.push(c.home);
+    // The buried miller: dug out, or left under the snow.
+    const buried = this.objects.find((o) => o.buried && !o.relapsed);
+    if (buried) {
+      this.choices.slopes = buried.state === 'frozen' ? 'left' : 'dug';
+      L.forks.slopes = this.choices.slopes;
+    }
     for (const o of this.objects) {
       if (o.type !== 'wanderer' || !o.home) continue;
       if (L.saved.includes(o.home) || L.lost.includes(o.home)) continue;
@@ -829,6 +853,8 @@ export class Game {
       e.low = false;
       e.wantLow = false;
       e.fall = null;
+      e.burial = null;
+      e.stun = 0;
       e.y = groundY(e.x) - CHEST_HEIGHT;
       e.vx = 0;
       e.warmth = WARMTH.max;
@@ -854,6 +880,8 @@ export class Game {
     // The howl of the storm: loud out in the open, muffled behind a rock, gone in the cave.
     const wd = this.wind;
     this.audio.setStorm(out || !wd.k ? 0 : wd.strength * Math.min(1, wd.k) * (wd.exposed ? 1 : 0.45));
+    // The mountain's rumble: rising before an avalanche, loudest as it comes down.
+    this.audio.setRumble(out ? 0 : shaking(this));
 
     for (const o of this.objects) {
       if (o.state !== 'frozen') continue;
