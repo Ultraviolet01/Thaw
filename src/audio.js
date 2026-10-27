@@ -255,8 +255,40 @@ export class GameAudio {
     this.sfx.heart.play(warmth < 35 ? 0.8 : 0.55, 1, false);
   }
 
-  pulse() {
+  // inTime: a pulse in time with her heart is a fuller, brighter breath.
+  pulse(inTime = false) {
+    if (inTime) {
+      if (!this.muted) this.sfx.pulse.play(0.65, 1.12, false);
+      return;
+    }
     this.playOne(this.sfx.pulse, 0.5);
+  }
+
+  // A villager waking: one short sung note on the glass, at their own pitch. The hum's preloaded player is reused,
+  // so waking someone never makes a new one.
+  voice(rate) {
+    if (this.muted) return;
+    const el = this.humPreload;
+    const token = (this.voiceToken = (this.voiceToken || 0) + 1);
+    el.pause();
+    el.currentTime = 1;
+    el.preservesPitch = false;
+    el.playbackRate = rate;
+    el.volume = 0;
+    el.play().catch(() => {});
+    let t = 0;
+    const step = () => {
+      if (this.voiceToken !== token) return;
+      t += 0.05;
+      const v = t < 0.3 ? t / 0.3 : Math.max(0, 1 - (t - 0.3) / 2.2);
+      el.volume = 0.45 * v;
+      if (v <= 0) {
+        el.pause();
+        return;
+      }
+      setTimeout(step, 50);
+    };
+    step();
   }
 
   // One sound from a pool, with a little variation in pitch so repeats do not sound identical.

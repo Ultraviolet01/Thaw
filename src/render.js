@@ -2103,8 +2103,11 @@ export class Renderer {
       && (h.low === undefined || !!h.low === lowHere || !inLower(h.x));
     let nearest = null;
     // When a companion's fire goes out, that is what the frost says, for a few seconds.
-    const note = game.note && game.time - game.note.t < 6 ? game.note : null;
+    // At a stage's end, between stages and in the ending, the frost is left to the closing words.
+    const closing = game.mode === 'stageEnd' || game.mode === 'transition' || game.mode === 'ending';
+    const note = !closing && game.note && game.time - game.note.t < 6 ? game.note : null;
     for (const h of game.level.hints) {
+      if (closing) break;
       if (note) break;
       if (live(h) && Math.abs(e.x - h.x) < 420 && (!nearest || Math.abs(e.x - h.x) < Math.abs(e.x - nearest.x))) nearest = h;
     }
@@ -2288,8 +2291,9 @@ export class Renderer {
     for (const r of game.rings) {
       const p = r.t / PULSE.ringSeconds;
       const ease = 1 - Math.pow(1 - p, 3);
-      c.strokeStyle = `rgba(255,205,140,${(1 - p) * (r.strong ? 0.3 : 0.18)})`;
-      c.lineWidth = 1.5;
+      // In time with her heart, the ring is brighter and gold.
+      c.strokeStyle = r.inTime ? `rgba(255,214,120,${(1 - p) * (r.strong ? 0.6 : 0.3)})` : `rgba(255,205,140,${(1 - p) * (r.strong ? 0.3 : 0.18)})`;
+      c.lineWidth = r.inTime && r.strong ? 2.5 : 1.5;
       c.beginPath();
       c.arc(r.x, r.y, Math.max(1, r.r * ease), 0, Math.PI * 2);
       c.stroke();

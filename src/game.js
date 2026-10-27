@@ -5,7 +5,7 @@ import {
 import { groundY, floorY, inLower, lowerRoute, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
 import { POT_HEIGHT } from './character.js';
-import { villagerName } from './village.js';
+import { villagerName, villager } from './village.js';
 import { setUpSlopes, updateSlopes, digOut, shaking } from './slopes.js';
 import { setUpLake, updateLake, pulseOnIce, inStorm } from './lake.js';
 import { loadSave, saveStageStart, saveFinish, clearCurrent } from './save.js';
@@ -65,6 +65,7 @@ export class Game {
     this.coldTimer = 0;
     // A line the frost says for a few seconds: a companion's fire going out, the wind breaking a pulse.
     this.note = null;
+    this.noteQueue = [];
     this.stageRecorded = false;
     // low: down in the gully or the ice cave. wantLow: she has chosen the gully at the cairn.
     this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: L.warmthCap || WARMTH.max, low: false, wantLow: false, fall: null, burial: null, stun: 0 };
@@ -106,6 +107,8 @@ export class Game {
     this.beatTimer = 0;
     this.beatIndex = 0;
     this.pulsing = false;
+    this.nextInTime = false;
+    this.lastPulseAt = -99;
     this.holdLock = true; // ignore a Space press carried over from the menu
     this.camX = 0;
     this.lightsOut = null;
@@ -292,6 +295,8 @@ export class Game {
     this.fire.cold = false;
     this.fire.reached = true;
     this.intro = null;
+    this.note = null;
+    this.noteQueue = [];
     this.titleFade = 0;
     this.pulsing = false;
     this.recordStage();
@@ -457,7 +462,13 @@ export class Game {
     const wantPulse = controllable && e.stun <= 0 && !this.holdLock && input.pulseHeld && gust <= 0.3;
     if (wantPulse && !this.pulsing) {
       this.pulsing = true;
-      this.beatTimer = this.beatInterval();
+      // In time with her heart: a press just after a heartbeat pulses now, one just before waits for the beat,
+      // and both are stronger. Off the beat, it pulses now and the heart keeps time from there. Never faster than the heart.
+      const iv = this.beatInterval();
+      const ready = this.time - this.lastPulseAt > iv * 0.6;
+      if (this.beatTimer < PULSE.inTimeWindow && ready) this.emitPulse(true);
+      else if (iv - this.beatTimer < PULSE.inTimeWindow) this.nextInTime = true;
+      else if (ready) this.beatTimer = iv;
     }
     if (!wantPulse) this.pulsing = false;
 
@@ -541,13 +552,19 @@ export class Game {
   onBeat() {
     this.beatIndex++;
     if (!this.lightsOut) this.audio.heartbeat(this.ember.warmth);
-    if (this.pulsing) this.emitPulse();
+    if (this.pulsing) this.emitPulse(this.nextInTime);
+    this.nextInTime = false;
   }
 
   // A line written in the frost for a few seconds.
   // follow: a companion's home, so the line stays with whoever said it.
-  say(text, x, follow) {
+  // queue: wait for the line already showing to finish, instead of replacing it.
+  say(text, x, follow, queue = false) {
     if (this.note && this.note.text === text && this.time - this.note.t < 6) return;
+    if (queue && this.note && this.time - this.note.t < 6) {
+      this.noteQueue.push({ text, x, follow });
+      return;
+    }
     this.note = { text, x, t: this.time, follow };
   }
 
@@ -662,14 +679,19 @@ export class Game {
     this.audio.crack();
   }
 
-  emitPulse() {
+  emitPulse(inTime = false) {
     const e = this.ember;
+    this.lastPulseAt = this.time;
     if (this.bridge && !e.low && e.x > this.bridge.x0 && e.x < this.bridge.x1) this.bridge.stress += CREVASSE.pulseStress;
-    e.warmth = Math.max(0, e.warmth - WARMTH.pulseCost);
+    e.warmth = Math.max(0, e.warmth - WARMTH.pulseCost * (inTime ? PULSE.inTimeCost : 1));
     const r = this.pulseRadius();
-    this.rings.push({ x: e.x, y: e.y, t: 0, r, strong: true });
-    for (const c of this.companions) this.rings.push({ x: c.x, y: c.y, t: 0, r: r * 0.45, strong: false });
-    this.audio.pulse();
+    this.rings.push({ x: e.x, y: e.y, t: 0, r, strong: true, inTime });
+    for (const c of this.companions) this.rings.push({ x: c.x, y: c.y, t: 0, r: r * 0.45, strong: false, inTime });
+    this.audio.pulse(inTime);
+    if (inTime && !this.hintFlags.inTime) {
+      this.hintFlags.inTime = true;
+      this.say('in time with her heart, a pulse goes further', e.x, null, true);
+    }
     this.hintFlags.pulsed = true;
     // Buried, a pulse melts the snow around her instead of reaching anything else.
     if (e.burial) {
@@ -691,7 +713,7 @@ export class Game {
       const smith = o.buried && this.companions.some((c) => c.home === 'smith') ? 2 : 1;
       // In the freezing rain every pulse thaws less.
       const rain = inStorm(this, o.x) ? LAKE.stormThaw : 1;
-      o.progress += (1 + this.companions.length) * smith * rain;
+      o.progress += (1 + this.companions.length) * smith * rain * (inTime ? PULSE.inTimeThaw : 1);
       o.hit = 1;
       this.audio.crack();
       o.progress = Math.min(o.progress, o.pulses);
@@ -916,7 +938,7 @@ export class Game {
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
       if (!this.toldCheckpoint) {
         this.toldCheckpoint = true;
-        this.say('if your light goes out, you will wake here', cx);
+        this.say('if your light goes out, you will wake here', cx, null, true);
       }
     }
     if (o.type === 'lantern') this.hintFlags.lanternLit = true;
@@ -929,6 +951,12 @@ export class Game {
       o.gone = true;
       // They light a pot of their own from yours. Their fire widens your pulse; it does not warm you.
       this.companions.push({ x: o.x, y: floorY(o.x, o.low) - CHEST * COMPANION_SCALE, facing: -1, phase: Math.random() * 6, home: o.home, low: !!o.low, joinedAt: this.time });
+      // They wake with a note of their own, and a few words, said beside them as they fall in with her.
+      const v = villager(o.home);
+      if (v) {
+        this.audio.voice(v.voice);
+        if (!o.relapsed) this.say(`${v.name}: ${v.wake}`, o.x, o.home, true);
+      }
     }
   }
 
@@ -939,8 +967,8 @@ export class Game {
       let tx = e.x - e.facing * 44 * (i + 1);
       // Gone to their own door to light the window.
       if (c.visit) tx = doorX(c.visit.home);
-      // At the end everyone gathers round the hearth, on both sides of the fire.
-      if (this.mode === 'ending') tx = this.fire.x + (i % 2 ? 1 : -1) * (70 + 40 * Math.floor(i / 2));
+      // At a stage's fire, and round the hearth at the end, everyone gathers on both sides of the fire.
+      if (this.mode === 'ending' || this.mode === 'stageEnd') tx = this.fire.x + (i % 2 ? 1 : -1) * (70 + 40 * Math.floor(i / 2));
       const step = (tx - c.x) * Math.min(1, dt * 1.8);
       if (Math.abs(tx - c.x) > 6) c.facing = Math.sign(tx - c.x);
       else c.facing = e.facing;
@@ -1041,8 +1069,10 @@ export class Game {
     if (this.fire.reached || this.lightsOut || this.fire.cold) return;
     if (Math.abs(e.x - this.fire.x) < 110) {
       this.fire.reached = true;
-      // The stage's opening title never lingers into its ending.
+      // The stage's opening title never lingers into its ending, and nor does anything the frost was saying.
       this.intro = null;
+      this.note = null;
+      this.noteQueue = [];
       this.titleFade = 0;
       this.recordStage();
       // The last fire: the walk is over. Remember how it went.
@@ -1067,6 +1097,10 @@ export class Game {
 
   updateLightsOut(dt) {
     if (this.note && this.time - this.note.t > 6) this.note = null;
+    if (!this.note && this.noteQueue.length) {
+      const q = this.noteQueue.shift();
+      this.say(q.text, q.x, q.follow);
+    }
     if (this.note && this.note.follow) {
       const c = this.companions.find((x) => x.home === this.note.follow);
       if (c) this.note.x = c.x;

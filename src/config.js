@@ -40,6 +40,10 @@ export const PULSE = {
   baseRadius: 150,
   perCompanion: 45,
   ringSeconds: 1.1,
+  // A press this close to a heartbeat is in time with her heart: it thaws more and costs less.
+  inTimeWindow: 0.15,
+  inTimeThaw: 1.5,
+  inTimeCost: 0.5,
 };
 
 // Warmth bands from the design doc.

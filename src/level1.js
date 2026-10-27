@@ -27,6 +27,7 @@ export const level1 = {
     // What the cold took, written where it happened.
     { x: 1300, text: 'the light stays dark', after: 'lostLantern' },
     { x: 1780, text: 'the weaver stayed frozen', after: 'lostWanderer' },
+    { x: 3020, text: 'pulse in time with her heart', after: 'pulsed', until: 'inTime' },
     { x: 3200, text: 'the baker is frozen here' },
   ],
   // What the stage end says about the fork.
