@@ -1,6 +1,6 @@
 import {
   VIEW, BEAT_SECONDS, SLOW_BEAT_EXTRA, WARMTH, EMBER, PULSE, THRESHOLDS, MELT_SECONDS, SPREAD_SECONDS, EMBERS,
-  WIND, CAVE, CREVASSE, AVALANCHE, LAKE,
+  WIND, CAVE, CREVASSE, AVALANCHE, LAKE, PERKS,
 } from './config.js';
 import { groundY, floorY, inLower, lowerRoute, objectBounds, setTerrain } from './terrain.js';
 import { Prologue, prologueGround } from './prologue.js';
@@ -50,6 +50,8 @@ export class Game {
     this.saved = loadSave();
     // The first time she finds somewhere to wake, the frost says so. Once a visit is enough.
     this.toldCheckpoint = false;
+    // Lines that teach something are written once a visit, not every time it happens.
+    this.told = new Set();
     this.reset();
     this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
   }
@@ -354,6 +356,11 @@ export class Game {
     return this.ledger.carry.includes('guide') && this.companions.some((c) => c.home === 'weaver');
   }
 
+  // Whether a villager is walking with her now.
+  has(home) {
+    return this.companions.some((c) => c.home === home);
+  }
+
   hasFlame() {
     return this.ledger.carry.includes('flame');
   }
@@ -457,7 +464,7 @@ export class Game {
     if (gust > 0.3 && this.pulsing) {
       this.pulsing = false;
       this.holdLock = true;
-      this.say('the wind breaks your pulse', e.x);
+      this.sayOnce('windBreaks', 'the wind breaks your pulse', e.x);
     }
     const wantPulse = controllable && e.stun <= 0 && !this.holdLock && input.pulseHeld && gust <= 0.3;
     if (wantPulse && !this.pulsing) {
@@ -498,11 +505,12 @@ export class Game {
     e.braced = gust > 0.3 && controllable && ax === 0 && !this.pulsing;
     if (gust > 0.3 && !this.windTold) {
       this.windTold = true;
-      this.say('stand still to brace', e.x);
+      this.sayOnce('brace', 'stand still to brace', e.x);
     }
     e.vx -= WIND.push * gust * (e.braced ? WIND.braced : 1) * dt;
     // In the ice storm the lake is glazed: she slides on when she stops.
-    const grip = inStorm(this, e.x) && !e.low ? LAKE.stormSlip : EMBER.damping;
+    // The ferryman knows how to walk on glazed ice: with them, she does not slide.
+    const grip = inStorm(this, e.x) && !e.low && !this.has('ferryman') ? LAKE.stormSlip : EMBER.damping;
     e.vx *= Math.exp(-(this.pulsing ? EMBER.pulseDamping : grip) * dt);
     e.vx = clamp(e.vx, -EMBER.maxSpeed, top);
     if (Math.abs(e.vx) > 8 && ax !== 0) e.facing = Math.sign(e.vx);
@@ -558,6 +566,13 @@ export class Game {
 
   // A line written in the frost for a few seconds.
   // follow: a companion's home, so the line stays with whoever said it.
+  // A line that teaches something: written the first time only.
+  sayOnce(key, text, x, follow, queue = false) {
+    if (this.told.has(key)) return;
+    this.told.add(key);
+    this.say(text, x, follow, queue);
+  }
+
   // queue: wait for the line already showing to finish, instead of replacing it.
   say(text, x, follow, queue = false) {
     if (this.note && this.note.text === text && this.time - this.note.t < 6) return;
@@ -688,9 +703,9 @@ export class Game {
     this.rings.push({ x: e.x, y: e.y, t: 0, r, strong: true, inTime });
     for (const c of this.companions) this.rings.push({ x: c.x, y: c.y, t: 0, r: r * 0.45, strong: false, inTime });
     this.audio.pulse(inTime);
-    if (inTime && !this.hintFlags.inTime) {
+    if (inTime) {
       this.hintFlags.inTime = true;
-      this.say('in time with her heart, a pulse goes further', e.x, null, true);
+      this.sayOnce('inTime', 'in time with her heart, a pulse goes further', e.x, null, true);
     }
     this.hintFlags.pulsed = true;
     // Buried, a pulse melts the snow around her instead of reaching anything else.
@@ -702,8 +717,11 @@ export class Game {
     pulseOnIce(this);
     if (e.stun > 0) return;
 
+    const lowHere = !!(e.low && inLower(e.x));
     for (const o of this.objects) {
       if (o.state !== 'frozen') continue;
+      // From the ridge a pulse cannot reach down into the cave, nor from the cave up onto the ridge.
+      if (!!o.low !== lowHere) continue;
       const b = o.bounds;
       if (Math.hypot(e.x - b.cx, e.y - b.cy) > r + b.reach) continue;
       // At a fork, whatever you crack first is your choice: the other side no longer takes your warmth.
@@ -780,13 +798,14 @@ export class Game {
         nearHeat = true;
         if (!this.treeTold && e.warmth < 92) {
           this.treeTold = true;
-          this.say('a warm tree warms you back', o.x);
+          this.sayOnce('treeWarms', 'a warm tree warms you back', o.x);
         }
       }
     }
 
     const inCave = e.low && inLower(e.x);
-    if (!nearHeat) delta -= WARMTH.drainPerSecond;
+    // The baker, walking with her, shares her warmth: she cools more slowly.
+    if (!nearHeat) delta -= WARMTH.drainPerSecond * (this.has('baker') ? PERKS.bakerDrain : 1);
     for (const m of this.level.mist) {
       if (e.x > m.x0 && e.x < m.x1) delta -= WARMTH.mistDrainPerSecond;
     }
@@ -813,7 +832,7 @@ export class Game {
     this.barFlash = Math.max(0, this.barFlash - dt);
 
     // Let your coal nearly die and the last person who joined you loses their fire.
-    if (e.warmth < WARMTH.relapseBelow && this.companions.length > 0) {
+    if (e.warmth < WARMTH.relapseBelow && this.companions.length > 0 && !this.has('storyteller')) {
       this.coldTimer += dt;
       if (this.coldTimer >= WARMTH.relapseAfter) {
         this.coldTimer = 0;
@@ -881,6 +900,12 @@ export class Game {
       this.choices.slopes = buried.state === 'frozen' ? 'left' : 'dug';
       L.forks.slopes = this.choices.slopes;
     }
+    // Someone whose fire went out and who was left frozen is no longer saved, whenever they first joined.
+    for (const o of this.objects) {
+      if (o.type !== 'wanderer' || !o.home || !o.relapsed || o.state !== 'frozen') continue;
+      if (this.companions.some((c) => c.home === o.home)) continue;
+      L.saved = L.saved.filter((h) => h !== o.home);
+    }
     for (const o of this.objects) {
       if (o.type !== 'wanderer' || !o.home) continue;
       if (L.saved.includes(o.home) || L.lost.includes(o.home)) continue;
@@ -913,7 +938,7 @@ export class Game {
     const e = this.ember;
     if (this.lightsOut || this.mode !== 'play' || this.fire.reached) return;
     if (this.note && this.time - this.note.t < 6) return;
-    const left = this.objects.filter((o) => o.type === 'wanderer' && o.home && o.state === 'frozen' && !o.missTold && !o.relapsed);
+    const left = this.objects.filter((o) => o.type === 'wanderer' && o.home && o.state === 'frozen' && !o.missTold);
     const first = left.find((o) => e.x - o.x > 650);
     if (!first) return;
     // People frozen side by side are spoken of together.
@@ -1057,7 +1082,8 @@ export class Game {
     if (this.pickups.length > 0) return;
     const max = this.level.maxEmbers ?? EMBERS.maxPerStage;
     if (this.embersSpawned >= max) return;
-    const odds = e.warmth < EMBERS.coldBelow ? EMBERS.coldChance : EMBERS.chance;
+    // Better odds when cold, and when she walks alone or nearly: the fewer with her, the harder the walk.
+    const odds = (e.warmth < EMBERS.coldBelow ? EMBERS.coldChance : EMBERS.chance) + (this.companions.length <= 1 ? EMBERS.aloneBonus : 0);
     if (Math.random() > odds) return;
     const limit = this.fire.reached ? this.level.width - 100 : this.fire.x - 150;
     const x = e.x + e.facing * between(EMBERS.ahead);
@@ -1112,9 +1138,12 @@ export class Game {
     if (!lo) return;
     lo.t += dt;
     if (lo.t >= 2.6 && !lo.respawned) {
-      // Wake at the last fire. Thawed things stay thawed and companions stay.
+      // Wake at the last fire. Thawed things stay thawed. But the cold that put her light out takes the fire of
+      // the last one to join her: they freeze where she fell, and must be warmed again. The old storyteller,
+      // while with her, keeps everyone's fire alight.
       const e = this.ember;
       lo.respawned = true;
+      if (this.companions.length > 0 && !this.has('storyteller')) this.relapse();
       e.x = this.checkpoint.x;
       e.low = false;
       e.wantLow = false;

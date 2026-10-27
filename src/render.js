@@ -166,6 +166,9 @@ export class Renderer {
     this.ctx = cv.getContext('2d');
     // The offscreen canvases (scene, frost, masks) are built in resize(), sized to the view.
     this.crystals = this.makeCrystals();
+    // The crystals scaled once to the frost's own size, so no frame has to shrink the full-size tile.
+    this.crystalsSmall = canvas(TILE_W * FROST_SCALE, VIEW_H * FROST_SCALE);
+    this.crystalsSmall.getContext('2d').drawImage(this.crystals, 0, 0, TILE_W * FROST_SCALE, VIEW_H * FROST_SCALE);
     this.grain = [0, 1, 2].map((i) => this.makeGrain(i));
     this.grainPatterns = this.grain.map((g) => this.ctx.createPattern(g, 'repeat'));
     this.frame = 0;
@@ -239,6 +242,10 @@ export class Renderer {
       this.sctx = this.scene.getContext('2d');
       this.small = canvas(SMALL_W, SMALL_H);
       this.smctx = this.small.getContext('2d');
+      this.raw = canvas(SMALL_W, SMALL_H);
+      this.rawctx = this.raw.getContext('2d');
+      this.half = canvas(SMALL_W * 2, SMALL_H * 2);
+      this.halfctx = this.half.getContext('2d');
       this.frost = canvas(FW, FH);
       this.fctx = this.frost.getContext('2d');
       this.mask = canvas(FW, FH);
@@ -391,6 +398,7 @@ export class Renderer {
 
   draw(game, dt) {
     this.frame++;
+    this.watchSpeed(dt);
     if (game.mode === 'title') return this.drawGate(game);
     if (game.mode === 'prologue') return this.drawPrologue(game, dt);
     if (game.level !== this.levelRef) this.setLevel(game.level);
@@ -416,11 +424,16 @@ export class Renderer {
     const shake = game.avalanches ? shaking(game) : 0;
     if (shake > 0.02) c.translate((Math.random() - 0.5) * 7 * shake, (Math.random() - 0.5) * 5 * shake);
 
-    if (look.blur > 0.05 || look.sat < 0.99) {
+    if (!this.lowDetail && (look.blur > 0.05 || look.sat < 0.99)) {
       c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)}) brightness(${look.bright.toFixed(2)})`;
     }
     c.drawImage(this.scene, 0, 0);
     c.filter = 'none';
+    // Low detail: no filters, so the cold drains the colour with a plain grey wash instead.
+    if (this.lowDetail && look.sat < 0.99) {
+      c.fillStyle = `rgba(150,166,174,${0.55 * (1 - look.sat)})`;
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
+    }
     const end = endingLook(game);
     c.globalAlpha = look.frostA * (end ? 1 - end.clear : 1);
     c.drawImage(this.frost, 0, 0, VIEW.w, VIEW_H);
@@ -2336,9 +2349,7 @@ export class Renderer {
 
     // The frost is the scene itself, shrunk and blown back up (a blur that works in every browser), then whitened.
     this.smctx.imageSmoothingQuality = 'high';
-    this.smctx.filter = 'saturate(0.35) brightness(1.25)';
-    this.smctx.drawImage(this.scene, 0, 0, SMALL_W, SMALL_H);
-    this.smctx.filter = 'none';
+    this.shrinkScene();
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'source-over';
     f.globalAlpha = 1;
@@ -2352,7 +2363,7 @@ export class Renderer {
     // Crystals are fixed to the world, so they scroll with it.
     f.globalAlpha = look.crystalA;
     const off = -(((cam % TILE_W) + TILE_W) % TILE_W);
-    for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
+    this.drawCrystals(f, off);
     f.globalAlpha = 1;
 
     f.save();
@@ -2418,11 +2429,32 @@ export class Renderer {
     f.globalCompositeOperation = 'destination-out';
     f.setTransform(1, 0, 0, 1, 0, 0);
     // A small blur feathers the melt edge (browsers without canvas filters just get a harder edge).
-    f.filter = 'blur(3px)';
+    f.filter = this.lowDetail ? 'none' : 'blur(3px)';
     f.drawImage(this.mask, 0, 0);
     f.filter = 'none';
     f.drawImage(this.textMask, 0, 0);
     f.globalCompositeOperation = 'source-over';
+  }
+
+  // The scene shrunk for the frost, its colour drained. Shrunk first and drained after: the filter then runs on a
+  // sixteenth of the pixels (filtering the full-size scene was most of a slow frame).
+  shrinkScene() {
+    // Halved twice with plain smoothing: about as soft as one 'high' quality shrink, at a fraction of the cost.
+    this.halfctx.drawImage(this.scene, 0, 0, SMALL_W * 2, SMALL_H * 2);
+    this.rawctx.drawImage(this.half, 0, 0, SMALL_W * 2, SMALL_H * 2, 0, 0, SMALL_W, SMALL_H);
+    const sm = this.smctx;
+    sm.clearRect(0, 0, SMALL_W, SMALL_H);
+    sm.filter = this.lowDetail ? 'none' : 'saturate(0.35) brightness(1.25)';
+    sm.drawImage(this.raw, 0, 0);
+    sm.filter = 'none';
+  }
+
+  // The frost crystals, tiled across the frost layer from the pre-scaled copy.
+  drawCrystals(f, off) {
+    f.save();
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystalsSmall, x * FROST_SCALE, 0);
+    f.restore();
   }
 
   drawCracks(f, o) {
@@ -2447,6 +2479,19 @@ export class Renderer {
       }
       f.stroke();
     }
+  }
+
+  // If frames come slowly (under about 45 a second, over two seconds of play), drop to low detail for good: the
+  // canvas filters (the frost's colour, the melt edge's feathering, the cold blur) are what a slow machine
+  // struggles with. Never switched back, so the look does not flicker between the two.
+  watchSpeed(dt) {
+    if (this.lowDetail || dt <= 0 || dt >= 0.1) return;
+    this.slow = this.slow || [];
+    this.slow.push(dt);
+    if (this.slow.length < 120) return;
+    const avg = this.slow.reduce((a, b) => a + b, 0) / this.slow.length;
+    this.slow = [];
+    if (avg > 0.022) this.lowDetail = true;
   }
 
   // ---------- On top of the glass ----------
@@ -2609,7 +2654,7 @@ export class Renderer {
     f.fillRect(0, 0, VIEW.w, VIEW_H);
     f.globalAlpha = 0.9;
     const off = -(((game.camX % TILE_W) + TILE_W) % TILE_W);
-    for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
+    this.drawCrystals(f, off);
     f.globalAlpha = 1;
     // Cut away what is not frosted (yet), or what has melted.
     const m = this.cmctx;
@@ -2900,9 +2945,7 @@ export class Renderer {
     const px = cc.x - cam;
     const py = cc.y;
     if (fr > 0) {
-      this.smctx.filter = 'saturate(0.35) brightness(1.25)';
-      this.smctx.drawImage(this.scene, 0, 0, SMALL_W, SMALL_H);
-      this.smctx.filter = 'none';
+      this.shrinkScene();
       const f = this.fctx;
       f.setTransform(1, 0, 0, 1, 0, 0);
       f.globalCompositeOperation = 'source-over';
@@ -2913,7 +2956,7 @@ export class Renderer {
       f.fillRect(0, 0, VIEW.w, VIEW_H);
       f.globalAlpha = 0.85;
       const off = -(((cam % TILE_W) + TILE_W) % TILE_W);
-      for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
+      this.drawCrystals(f, off);
       f.globalAlpha = 1;
 
       const m = this.mctx;

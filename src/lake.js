@@ -1,6 +1,6 @@
 // The lake's hazards in Stage 4: thin ice that breaks under her if she stops or pulses on it, a whiteout that
 // hides the cracks, and an ice storm that glazes the ice and slows every thaw.
-import { LAKE } from './config.js';
+import { LAKE, PERKS } from './config.js';
 
 export function setUpLake(g, L) {
   g.thin = (L.thinIce || []).map(([x0, x1]) => ({ x0, x1, state: 'thin', stand: 0, t: 0, warned: false, creaked: 0 }));
@@ -43,10 +43,7 @@ export function updateLake(g, dt) {
   if (p.state === 'open') {
     e.x = e.x - p.x0 < p.x1 - e.x ? p.x0 - 1 : p.x1 + 1;
     e.vx = 0;
-    if (!g.hintFlags.toldOpen) {
-      g.hintFlags.toldOpen = true;
-      g.say('open water. wait for it to freeze over', e.x);
-    }
+    g.sayOnce('openWater', 'open water. wait for it to freeze over', e.x);
     return;
   }
   if (Math.abs(e.vx) < LAKE.thinSlow) p.stand += dt;
@@ -55,9 +52,11 @@ export function updateLake(g, dt) {
   const level = Math.floor(p.stand / 0.25);
   if (level > p.creaked) {
     p.creaked = level;
-    g.audio.creak(p.stand / LAKE.thinStand);
+    g.audio.creak(p.stand / (LAKE.thinStand * (g.has('ferryman') ? PERKS.ferrymanThin : 1)));
   }
-  if (p.stand >= LAKE.thinStand) fallIn(g, p);
+  // With the ferryman beside her, the thin ice holds a little longer.
+  const holds = LAKE.thinStand * (g.has('ferryman') ? PERKS.ferrymanThin : 1);
+  if (p.stand >= holds) fallIn(g, p);
 }
 
 // A pulse on thin ice breaks it at once.

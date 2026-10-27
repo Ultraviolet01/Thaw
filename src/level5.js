@@ -64,9 +64,9 @@ export const level5 = {
   // The road: the wind is back, and the rocks are further apart than on the plains.
   rocks: [1200, 1800, 2450],
   wind: [
-    { x0: 800, x1: 3000, k: 1.3 },
+    { x0: 800, x1: 3000, k: 1.5 },
     // The square is open to the wind: a gust breaks the pulse at the hearth.
-    { x0: 9200, x1: 10300, k: 1.1 },
+    { x0: 9200, x1: 10300, k: 1.25 },
   ],
   // The pass above the village: one avalanche run with a rock to shelter under, then the cliff path.
   avalanches: [

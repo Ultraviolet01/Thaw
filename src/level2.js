@@ -44,6 +44,8 @@ export const level2 = {
     // Down in the cave: the smith. The companion is on the slow way. A fall through the snow bridge lands
     // well past them, so reaching them after a fall means walking back through the dark.
     { type: 'wanderer', x: 4000, pulses: 6, home: 'smith', low: true },
+    // Up on the ridge, alone in the wind: a tree only the ridge can reach. The ridge's own reward, against the smith.
+    { type: 'tree', x: 4200, pulses: 3 },
     // Out in the open where the routes meet: warming the shepherd means standing in the wind, or behind the rock.
     { type: 'wanderer', x: 6050, pulses: 6, home: 'shepherd' },
   ],

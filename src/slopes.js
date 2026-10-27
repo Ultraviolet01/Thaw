@@ -135,7 +135,7 @@ function updateQuake(g, q, dt) {
         e.warmth = Math.max(1, e.warmth - QUAKE.hitWarmth);
         e.vx = -140;
         e.stun = QUAKE.stun;
-        g.say('step out from under the ice', e.x);
+        g.sayOnce('icicleHit', 'step out from under the ice', e.x);
       }
     }
     g.audio.icicles();

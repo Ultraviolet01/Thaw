@@ -61,6 +61,7 @@ export const EMBERS = {
   ahead: [500, 900], // how far ahead of the player it appears
   warmth: 15,
   life: 25, // seconds before it cools and fades
+  aloneBonus: 0.15, // extra odds on each roll while she walks with one companion or none
   pickupRange: 30,
   // The most that can ever appear in one stage, picked up or not. A stage can set its own with maxEmbers.
   maxPerStage: 2,
@@ -72,7 +73,7 @@ export const WIND = {
   calm: [6, 9], // seconds between gusts
   warn: 3, // seconds of warning before a gust
   guideWarn: 5.5, // with the weaver walking with her, the warning comes this early
-  gust: 4.5,
+  gust: 3.5,
   push: 300, // how hard a gust pushes her back, at strength 1
   braced: 0.08, // standing still, she braces: the push is cut to this fraction (she still loses warmth)
   gustDrain: 1.3, // extra warmth lost per second in a full gust, at strength 1
@@ -139,4 +140,10 @@ export const HOME = {
   reach: 130,
   lightSeconds: 1.4,
   linger: 0.6,
+};
+
+// What the villagers without a warning of their own bring to the walk.
+export const PERKS = {
+  bakerDrain: 0.9, // the baker shares her warmth: she cools this much as fast
+  ferrymanThin: 1.6, // the ferryman steadies her on thin ice: it holds this much longer under her
 };

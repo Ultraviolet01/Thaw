@@ -61,3 +61,4 @@ requestAnimationFrame(frame);
 
 // Handy in the browser console while tuning.
 window.thaw = game;
+window.thawRenderer = renderer;
