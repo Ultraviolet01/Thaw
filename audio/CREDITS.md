@@ -26,7 +26,7 @@ The tracks were re-encoded to a smaller file size and leveled to the same loudne
   - Also the mountain's rumble in Stage 3: the same recording played at half speed, an octave lower.
 - **Ice cracking:** "Ice Cracks" by karlis.stigis, Freesound, 2012. https://freesound.org/people/karlis.stigis/sounds/168712/
   - Files: `sfx/ice-crack-1.mp3` to `sfx/ice-crack-6.mp3`, short cuts from the one recording.
-  - Also played slower and lower for avalanches and frost quakes, and faster for icicles shattering.
+  - Also played slower and lower for avalanches, frost quakes and breaking through the ice, and faster for icicles shattering and thin ice creaking.
 - **Footsteps:** "Footstep in the snow_04 [RAW]" by cabled_mess, Freesound, 2017. https://freesound.org/people/cabled_mess/sounds/384424/
   - Files: `sfx/snow-step-1.mp3` and `sfx/snow-step-2.mp3`, the two crunches in the one step.
 - **Fire at the stage end:** "Fire crackling in fireplace" by Davor, Freesound, 2017. https://freesound.org/people/Davor/sounds/382616/
@@ -37,6 +37,7 @@ The tracks were re-encoded to a smaller file size and leveled to the same loudne
   - Files: `sfx/pulse-1.mp3` to `sfx/pulse-3.mp3`, three gentle blows.
 - **Melting:** "Snow Dripping" by LilMati, Freesound, 2020. https://freesound.org/people/LilMati/sounds/514967/
   - Files: `sfx/melt-1.mp3` to `sfx/melt-3.mp3`.
+  - Also played lower for the splash of falling through the ice in Stage 4.
 - **Refreezing:** "Winter night - frozen trees" by traus, Freesound, 2016. https://freesound.org/people/traus/sounds/370266/
   - Files: `sfx/refreeze-1.mp3` and `sfx/refreeze-2.mp3`.
 - **Lights out:** "Candle flicker/ blown out x4" by peridactyloptrix, Freesound, 2013. https://freesound.org/people/peridactyloptrix/sounds/204531/

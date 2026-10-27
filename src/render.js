@@ -5,6 +5,7 @@ import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE } from './village.js';
 import { rumbleSeconds, shaking } from './slopes.js';
+import { inStorm } from './lake.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -477,11 +478,15 @@ export class Renderer {
     // The avalanche pours down behind the figures; anyone it reaches outside the overhang is buried.
     this.drawSlides(s, game, t);
     this.drawFigures(s, game, dt, t);
+    this.drawSplash(s, game, t);
     this.drawCliffs(s, game, t);
     this.drawCaveDark(s, game, t);
+    this.drawLakeDark(s, game, t);
     this.drawLights(s, game, t);
     this.drawMist(s, t);
+    this.drawWhiteout(s, game, t);
     s.restore();
+    this.drawRain(s, game, t);
     this.drawSnow(s, cam, dt, t, game.wind.strength);
     this.drawNear(s, cam);
   }
@@ -952,6 +957,143 @@ export class Renderer {
     c.restore();
   }
 
+  // ---------- Stage 4: the lake ----------
+
+  // The frozen lake: a band of dark, glassy ice along the path, glazed and glinting in the ice storm. Thin patches
+  // are darker with hairline cracks (hidden in the whiteout); broken ones are open black water with floating shards.
+  drawIce(s, game, x0, x1, t) {
+    const lake = game.level.lake;
+    const a = Math.max(x0, lake.x0);
+    const b = Math.min(x1, lake.x1);
+    if (a < b) {
+      s.fillStyle = 'rgba(52,80,96,0.8)';
+      s.beginPath();
+      s.moveTo(a, groundY(a) - 1);
+      for (let x = a; x <= b; x += 16) s.lineTo(x, groundY(x) - 1);
+      for (let x = b; x >= a; x -= 16) s.lineTo(x, groundY(x) + 34);
+      s.closePath();
+      s.fill();
+      // Long pale streaks of reflection in the ice.
+      for (let x = Math.floor(a / 90) * 90; x < b; x += 90) {
+        const glaze = inStorm(game, x) ? 0.7 + 0.3 * Math.sin(t * 3 + x) : 0.35;
+        s.strokeStyle = `rgba(210,232,242,${glaze * (0.5 + 0.5 * hash(151, x))})`;
+        s.lineWidth = 1.2;
+        s.beginPath();
+        const y = groundY(x) + 6 + (hash(157, x) + 1) * 10;
+        s.moveTo(x, y);
+        s.lineTo(x + 40 + hash(163, x) * 20, y + 1);
+        s.stroke();
+      }
+    }
+    const e = game.ember;
+    const flame = game.hasFlame();
+    for (const p of game.thin) {
+      if (p.x1 < x0 || p.x0 > x1) continue;
+      const gy = groundY((p.x0 + p.x1) / 2);
+      if (p.state === 'open') {
+        s.fillStyle = '#0b161d';
+        s.beginPath();
+        s.ellipse((p.x0 + p.x1) / 2, gy + 6, (p.x1 - p.x0) / 2, 9, 0, 0, Math.PI * 2);
+        s.fill();
+        s.fillStyle = 'rgba(200,225,235,0.7)';
+        for (let i = 0; i < 6; i++) {
+          const sx = p.x0 + 10 + ((hash(167, i + p.x0) + 1) / 2) * (p.x1 - p.x0 - 20);
+          s.fillRect(sx + Math.sin(t * 2 + i) * 2, gy + 3 + (i % 3), 8 + (i % 3) * 3, 2);
+        }
+        continue;
+      }
+      // Seen clearly unless the whiteout hides it; the lantern's flame shows what is close to her even then.
+      const near = flame && Math.abs(e.x - (p.x0 + p.x1) / 2) < 160 ? 1 : 0;
+      const see = Math.max(near, 1 - 0.95 * game.whiteout);
+      const k = Math.min(1, p.stand / 0.8);
+      // Thin ice is dark and clear, with the black water showing through it.
+      s.fillStyle = `rgba(14,30,40,${0.75 * see})`;
+      s.beginPath();
+      s.ellipse((p.x0 + p.x1) / 2, gy + 9, (p.x1 - p.x0) / 2, 9, 0, 0, Math.PI * 2);
+      s.fill();
+      s.strokeStyle = `rgba(150,190,210,${0.6 * see})`;
+      s.lineWidth = 1;
+      s.stroke();
+      s.strokeStyle = `rgba(235,246,252,${(0.75 + 0.25 * k) * see})`;
+      s.lineWidth = 1.4 + 1.6 * k;
+      s.beginPath();
+      for (let i = 0; i < 4; i++) {
+        let x = p.x0 + 12 + i * ((p.x1 - p.x0 - 24) / 3);
+        let y = gy + 4;
+        s.moveTo(x, y);
+        for (let j = 0; j < 3; j++) {
+          x += 8 + hash(173, i * 7 + j + p.x0) * 10;
+          y += hash(179, i * 5 + j + p.x0) * 4;
+          s.lineTo(x, y);
+        }
+      }
+      s.stroke();
+    }
+  }
+
+  // Breaking through: water thrown up and ice shards.
+  drawSplash(s, game, t) {
+    const sp = game.ember.splash;
+    if (!sp) return;
+    const k = sp.t / 1.6;
+    const gy = groundY(sp.x);
+    for (let i = 0; i < 14; i++) {
+      const a = -Math.PI * (0.15 + 0.7 * (i / 13));
+      const d = 20 + 90 * k * (0.6 + 0.4 * hash(181, i));
+      const x = sp.x + Math.cos(a) * d;
+      const y = gy + Math.sin(a) * d * (1.2 - k) + 60 * k * k;
+      s.fillStyle = `rgba(210,232,242,${0.8 * (1 - k)})`;
+      s.fillRect(x, y, 3, 3);
+    }
+  }
+
+  // The lake at night is darker than anywhere else: she sees by her own coal, and further with the lantern's flame.
+  drawLakeDark(s, game, t) {
+    if (!game.level.dark) return;
+    const e = game.ember;
+    const R = (game.hasFlame() ? 330 : 190) + game.glowRadius();
+    const g = s.createRadialGradient(e.x, e.y, R * 0.2, e.x, e.y, R);
+    g.addColorStop(0, 'rgba(2,5,9,0)');
+    g.addColorStop(0.6, 'rgba(2,5,9,0.55)');
+    g.addColorStop(1, 'rgba(2,5,9,0.86)');
+    s.fillStyle = g;
+    s.fillRect(game.camX - 20, 0, VIEW.w + 40, VIEW_H);
+  }
+
+  // The whiteout: blowing snow closes in until almost nothing shows but a little space around her.
+  drawWhiteout(s, game, t) {
+    const w = game.whiteout || 0;
+    if (w < 0.01) return;
+    const e = game.ember;
+    const R = 70 + game.glowRadius() * 0.4;
+    const g = s.createRadialGradient(e.x, e.y, R * 0.3, e.x, e.y, R * 2.2);
+    g.addColorStop(0, `rgba(226,236,242,${0.15 * w})`);
+    g.addColorStop(1, `rgba(226,236,242,${0.93 * w})`);
+    s.fillStyle = g;
+    s.fillRect(game.camX - 20, 0, VIEW.w + 40, VIEW_H);
+  }
+
+  // Freezing rain in the ice storm: fast, slanting streaks that glint.
+  drawRain(s, game, t) {
+    const e = game.ember;
+    let k = 0;
+    for (const st of game.level.storms || []) {
+      const d = Math.min(e.x - st.x0, st.x1 - e.x);
+      k = Math.max(k, Math.max(0, Math.min(1, d / 300 + 0.3)));
+    }
+    if (k <= 0.01) return;
+    s.strokeStyle = `rgba(215,232,242,${0.7 * k})`;
+    s.lineWidth = 1.4;
+    s.beginPath();
+    for (let i = 0; i < 160; i++) {
+      const x = ((hash(191, i) + 1) / 2) * (VIEW.w + 200) - 100;
+      const y = (((hash(193, i) + 1) / 2) * VIEW_H + t * (900 + 300 * hash(197, i))) % (VIEW_H + 40) - 20;
+      s.moveTo(x - ((y * 0.18) % 60), y);
+      s.lineTo(x - ((y * 0.18) % 60) - 6, y + 18);
+    }
+    s.stroke();
+  }
+
   // ---------- Stage features: the ice cave, the snow bridge, rocks, the cairn, the old camp ----------
 
   drawStageGround(s, cam, game, t) {
@@ -963,6 +1105,7 @@ export class Renderer {
     for (const rx of L.rocks || []) if (rx > x0 - 100 && rx < x1 + 100) this.drawRock(s, rx);
     if (L.cairn) this.drawCairn(s, L.cairn.x, t, game.wind.strength);
     if (L.camp) this.drawCamp(s, L.camp.x, t);
+    if (L.lake) this.drawIce(s, game, x0, x1, t);
   }
 
   // The cave under the ridge: the space between the ridge's underside and the gully floor.

@@ -192,6 +192,19 @@ export class GameAudio {
     this.sfx.crack.play(1, 0.45, false);
   }
 
+  // Thin ice creaking under her: higher and louder the longer she stands. k runs 0 to 1.
+  creak(k) {
+    if (this.muted) return;
+    this.sfx.crack.play(0.25 + 0.6 * clamp01(k), 1.5 + 0.4 * clamp01(k), false);
+  }
+
+  // Through the ice into the water.
+  splash() {
+    if (this.muted) return;
+    this.sfx.crack.play(1, 0.7, false);
+    this.sfx.melt.play(1, 0.6, false);
+  }
+
   // Icicles shattering on the path.
   icicles() {
     if (this.muted) return;
