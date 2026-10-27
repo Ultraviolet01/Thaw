@@ -161,6 +161,9 @@ export class GameAudio {
     // The hum is played by a loop per frozen thing; loading it once here puts it in the browser's cache.
     this.humPreload = new Audio(HUM_SRC);
     this.humPreload.preload = 'auto';
+    // The theme is a large file and the prologue is timed to it: start loading it as soon as the page opens.
+    this.themePreload = new Audio(THEME_SRC);
+    this.themePreload.preload = 'auto';
     this.resting = false;
   }
 
@@ -351,7 +354,8 @@ export class GameAudio {
   // If the file is missing, the prologue plays November Snow instead.
   playTheme() {
     if (this.theme) return;
-    const el = new Audio(THEME_SRC);
+    const el = this.themePreload || new Audio(THEME_SRC);
+    this.themePreload = null;
     el.volume = 0.85;
     el.muted = this.muted;
     el.addEventListener('error', () => { this.themeFailed = true; });

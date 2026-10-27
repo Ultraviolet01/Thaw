@@ -834,6 +834,9 @@ export class Game {
   // but it takes more than the first time.
   relapse() {
     const c = this.companions.pop();
+    // Gone cold before their window was lit: warmed again, they will go home and light it.
+    const home = (this.homes || []).find((h) => h.id === c.home && h.lit < 1);
+    if (home) home.visited = false;
     const o = {
       type: 'wanderer',
       x: c.x,
