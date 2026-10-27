@@ -467,6 +467,7 @@ export class Game {
     e.wantLow = true;
     e.vx = 0;
     e.fall = { t: 0, dy: floorY(e.x, true) - from };
+    e.warmth = Math.max(1, e.warmth - CREVASSE.fallWarmth);
     this.pulsing = false;
     this.holdLock = true;
     this.route = 'fell';

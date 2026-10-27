@@ -37,8 +37,9 @@ export const level2 = {
     { type: 'tree', x: 2080, pulses: 3 },
     // A lantern to rest by before the split, warmed from behind the rock beside it.
     { type: 'lantern', x: 3060, pulses: 4, radius: 230 },
-    // Down in the cave: the smith. The companion is on the slow way.
-    { type: 'wanderer', x: 4700, pulses: 6, home: 'smith', low: true },
+    // Down in the cave: the smith. The companion is on the slow way. A fall through the snow bridge lands
+    // well past them, so reaching them after a fall means walking back through the dark.
+    { type: 'wanderer', x: 4000, pulses: 6, home: 'smith', low: true },
     // Out in the open where the routes meet: warming the shepherd means standing in the wind, or behind the rock.
     { type: 'wanderer', x: 6050, pulses: 6, home: 'shepherd' },
   ],
@@ -51,14 +52,14 @@ export const level2 = {
     { x0: X1, x1: 6700, k: 1 },
   ],
   // A snow bridge on the ridge over the cave. Stop or pulse on it and it gives way.
-  crevasse: { x0: 4350, x1: 4480 },
+  crevasse: { x0: 4520, x1: 4650 },
   mist: [],
   fire: { x: 7450 },
   hints: [
     { x: 650, text: 'the wind comes in waves', until: 'gusted' },
     { x: 1150, text: 'hide behind the rocks', after: 'gusted', until: 'sheltered' },
     { x: X0 - 120, text: 'down for the long way, under the ice', until: 'routeChosen' },
-    { x: 4700, text: 'the smith is frozen here', low: true },
+    { x: 4000, text: 'the smith is frozen here', low: true },
     { x: 6050, text: 'the shepherd is frozen here' },
   ],
   // The route is this stage's fork. Falling through the bridge counts as its own way.

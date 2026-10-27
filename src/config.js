@@ -85,4 +85,5 @@ export const CREVASSE = {
   slowSpeed: 35, // slower than this counts as standing
   pulseStress: 0.6, // a pulse on the bridge counts as this many seconds of standing
   fallSeconds: 0.7,
+  fallWarmth: 5, // the landing knocks her coal low
 };
