@@ -2,11 +2,22 @@
 // Teaches reacting to warnings and what a rescue costs: avalanches down the slopes, frost quakes on the cliffs,
 // and the miller, buried by an avalanche beside the path.
 
+// The path climbs: up from the foothills in steep pitches with flat landings between them, along the cliff,
+// to a high point where the lantern stands, then down past the miller to the fire.
+const PATH = [
+  [0, 648], [500, 642], [760, 600], [1000, 590], [1250, 548], [1700, 538], [2300, 518],
+  [2520, 466], [2700, 458], [2880, 424], [3900, 402], [4120, 352], [4400, 330], [4650, 336],
+  [4950, 380], [5800, 452], [6250, 520], [6600, 552], [7000, 610], [8000, 640],
+];
+
 function ground(x) {
-  return 588
-    + Math.sin(x * 0.0011 + 0.6) * 42
-    + Math.sin(x * 0.0037 + 1) * 15
-    + Math.sin(x * 0.012 + 0.3) * 4;
+  let i = 0;
+  while (i < PATH.length - 2 && x > PATH[i + 1][0]) i++;
+  const [x0, y0] = PATH[i];
+  const [x1, y1] = PATH[i + 1];
+  const k = Math.max(0, Math.min(1, (x - x0) / (x1 - x0)));
+  const eased = k * k * (3 - 2 * k);
+  return y0 + (y1 - y0) * eased + Math.sin(x * 0.012 + 0.3) * 4 + Math.sin(x * 0.0041 + 1) * 6;
 }
 
 export const level3 = {
@@ -14,11 +25,13 @@ export const level3 = {
   width: 8000,
   spawn: { x: 180, y: 470 },
   ground,
+  // The far hills sink as she climbs, so the height can be felt.
+  altitude: true,
   // What is left of the last stage's fire, where she sets off.
   camp: { x: 70 },
   objects: [
     { type: 'tree', x: 1400, pulses: 3 },
-    // A lantern to rest by before the miller.
+    // A lantern at the top of the climb, to rest by before the way down to the miller.
     { type: 'lantern', x: 4400, pulses: 4, radius: 230 },
     // Buried by an avalanche beside the path. Digging them out takes many pulses.
     { type: 'wanderer', x: 5330, pulses: 14, home: 'miller', buried: true },

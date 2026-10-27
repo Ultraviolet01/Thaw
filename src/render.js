@@ -463,7 +463,9 @@ export class Renderer {
     const s = this.sctx;
     const cam = game.camX;
     const t = game.time;
-    this.drawSky(s, cam, t);
+    // High on a mountain the far hills sit lower on the screen.
+    const lift = game.level.altitude ? Math.max(0, Math.min(320, 600 - groundY(cam + VIEW.w * 0.42))) * 0.8 : 0;
+    this.drawSky(s, cam, t, lift);
     s.save();
     s.translate(-cam, 0);
     this.drawMountainside(s, game, t);
@@ -484,7 +486,7 @@ export class Renderer {
     this.drawNear(s, cam);
   }
 
-  drawSky(s, cam, t) {
+  drawSky(s, cam, t, lift = 0) {
     const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.7);
     g.addColorStop(0, C.skyTop);
     g.addColorStop(1, C.skyBottom);
@@ -502,7 +504,8 @@ export class Renderer {
       [0.45, 16, (x) => 455 - Math.abs(Math.sin(x * 0.0046 + 2)) * 65 - Math.sin(x * 0.019) * 7],
       [0.7, 22, (x) => 515 - Math.abs(Math.sin(x * 0.006 + 1)) * 42 - Math.sin(x * 0.027) * 5],
     ];
-    ridges.forEach(([par, treeH, fn], i) => {
+    ridges.forEach(([par, treeH, fn0], i) => {
+      const fn = (x) => fn0(x) + lift * (0.4 + par);
       const off = cam * par;
       s.fillStyle = C.ridges[i];
       s.beginPath();

@@ -342,8 +342,13 @@ export class Game {
       else if (input.moveY < -0.5) e.wantLow = false;
     }
     const inCave = e.low && inLower(e.x);
-    const top = EMBER.maxSpeed * (inCave ? CAVE.speed : 1);
-    e.vx += ax * EMBER.accel * (inCave ? CAVE.speed : 1) * dt;
+    // Uphill is slow going, downhill a little quicker.
+    const grade = (floorY(e.x + 8, e.low) - floorY(e.x - 8, e.low)) / 16;
+    const climb = ax * -grade;
+    const slope = climb > 0 ? Math.max(0.5, 1 - 1.6 * climb) : Math.min(1.15, 1 - 0.5 * climb);
+    const pace = (inCave ? CAVE.speed : 1) * slope;
+    const top = EMBER.maxSpeed * pace;
+    e.vx += ax * EMBER.accel * pace * dt;
     // A gust pushes her back the way she came, unless she stands still and braces against it.
     e.braced = gust > 0.3 && controllable && ax === 0 && !this.pulsing;
     if (gust > 0.3 && !this.windTold) {
