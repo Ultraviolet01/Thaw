@@ -19,6 +19,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export const INTRO_LOCK = 3.2;
 // Later stages open with her already standing: a shorter pause while the stage name is written.
 const WALK_ON_LOCK = 1.4;
+// Between stages: she walks on while frost closes over the window, then her coal melts it open on the next stage.
+export const TRANSITION = { frostIn: 2.2, hold: 0.35, thaw: 3.2 };
 const between = ([a, b]) => a + Math.random() * (b - a);
 
 export class Game {
@@ -29,6 +31,8 @@ export class Game {
     this.audio = audio;
     // Who walks into a stage with her. Restarting a stage brings back the same people.
     this.companionsAtStageStart = [];
+    // Between stages: { phase: 'out' | 'in', t }.
+    this.transition = null;
     // title (press any key, so the browser lets sound play) | prologue | play | paused | stageEnd
     this.mode = 'title';
     this.prologue = null;
@@ -130,6 +134,24 @@ export class Game {
 
     if (input.wasPressed('KeyM')) this.audio.toggleMute();
 
+    if (this.transition) {
+      const tr = this.transition;
+      tr.t += dt;
+      // The wind rises as the frost closes in, and eases as it melts open.
+      this.audio.setWind(tr.phase === 'out' ? 0.7 * Math.min(1, tr.t / TRANSITION.frostIn) : 0.7 * Math.max(0, 1 - tr.t / TRANSITION.thaw));
+      if (tr.phase === 'out') {
+        // The window is frosted over: change stage behind it.
+        if (tr.t >= TRANSITION.frostIn + TRANSITION.hold) {
+          this.goToStage(this.stage + 1);
+          this.transition = { phase: 'in', t: 0 };
+        } else {
+          this.simulate(dt, input);
+        }
+        return;
+      }
+      if (tr.t >= TRANSITION.thaw) this.transition = null;
+    }
+
     if (this.mode === 'paused') {
       if (input.pausePressed) this.mode = 'play';
       else if (this.startOverPressed(input)) this.startOver();
@@ -152,7 +174,10 @@ export class Game {
       }
       if (this.stageEndT > 6 && input.pulsePressed) {
         if (this.hasNextStage()) {
-          this.goToStage(this.stage + 1);
+          // She sets off; the stage changes once the frost has closed over the window.
+          this.mode = 'transition';
+          this.transition = { phase: 'out', t: 0 };
+          this.audio.setRest(false);
           return;
         }
         this.mode = 'play';
@@ -194,7 +219,7 @@ export class Game {
     this.reset();
     this.audio.setFire(0);
     this.mode = 'play';
-    this.intro = { t: 0, pulsed: true, kind: 'walk' };
+    this.intro = { t: 0, pulsed: false, kind: 'walk' };
     this.titleFade = 1;
   }
 
@@ -229,7 +254,8 @@ export class Game {
     const it = this.intro;
     if (!it) return;
     it.t += dt;
-    if (!it.pulsed && it.t > 2.2) {
+    // Her coal pulses once: rising from the snow in the first stage, or melting the frost open in later ones.
+    if (!it.pulsed && it.t > (it.kind === 'walk' ? 0.3 : 2.2)) {
       it.pulsed = true;
       const e = this.ember;
       this.rings.push({ x: e.x, y: e.y, t: 0, r: this.pulseRadius(), strong: true });
@@ -303,6 +329,8 @@ export class Game {
       ax = Math.max(-1, Math.min(1, input.moveX));
       if (Math.abs(ax) > 0.1) this.hintFlags.moved = true;
     }
+    // Setting off for the next stage, she walks on by herself.
+    if (this.mode === 'transition') ax = 1;
     // At the cairn, down chooses the gully; up changes her mind.
     const cairn = L.cairn;
     if (cairn && controllable && Math.abs(e.x - cairn.x) < 220) {

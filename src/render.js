@@ -1,7 +1,7 @@
 import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND } from './config.js';
 import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
-import { COMPANION_SCALE, PLAYER_SCALE } from './game.js';
+import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE } from './village.js';
 
@@ -224,6 +224,12 @@ export class Renderer {
       // Writing gets its own mask so it stays sharp while melt edges are feathered.
       this.textMask = canvas(FW, FH);
       this.tctx = this.textMask.getContext('2d');
+      // The frost that closes over the whole window between stages, and the mask that melts it open.
+      this.cover = canvas(FW, FH);
+      this.cctx = this.cover.getContext('2d');
+      this.coverMask = canvas(FW, FH);
+      this.cmctx = this.coverMask.getContext('2d');
+      this.coverImg = null;
       this.growth = null;
     }
     this.scale = Math.min(this.canvas.width / VIEW.w, this.canvas.height / VIEW_H);
@@ -400,6 +406,8 @@ export class Renderer {
     this.drawShimmers(c, game);
     c.restore();
 
+    if (game.transition) this.drawCover(c, game);
+
     // Film grain keeps the picture from looking too clean and digital.
     c.globalAlpha = 0.06;
     c.fillStyle = this.grainPatterns[Math.floor(this.frame / 2) % 3];
@@ -416,14 +424,25 @@ export class Renderer {
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     // Out of black as the first stage begins.
-    if (game.intro && game.intro.t < 1.6) {
+    if (game.intro && game.intro.kind !== 'walk' && game.intro.t < 1.6) {
       c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (!(game.intro && game.intro.t < game.introLock())) this.drawBar(c, game);
     if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
-    if (game.mode === 'stageEnd') this.drawStageEndText(c, game);
+    if (game.mode === 'stageEnd') {
+      this.drawStageEndText(c, game);
+      // Ready the frost pattern for the walk on, while nothing is moving.
+      if (!this.growth) this.growthMask(0);
+    }
+    // Setting off: the end screen fades as the frost comes in.
+    if (game.mode === 'transition') {
+      c.save();
+      c.globalAlpha = 1 - clamp01(game.transition.t / 0.8);
+      this.drawStageEndText(c, game);
+      c.restore();
+    }
     if (game.audio.muted) {
       c.font = `13px ${SERIF}`;
       c.fillStyle = 'rgba(200,215,230,0.55)';
@@ -1251,7 +1270,7 @@ export class Renderer {
     const t = game.time;
     const e = game.ember;
     const w = game.displayWarmth();
-    const fadeAll = game.mode === 'stageEnd' ? 1 - 0.85 * clamp01((game.stageEndT - 2.5) / 1.5) : 1;
+    const fadeAll = game.mode === 'stageEnd' || game.mode === 'transition' ? 1 - 0.85 * clamp01((game.stageEndT - 2.5) / 1.5) : 1;
     const out = [];
 
     let breath = 0;
@@ -1385,9 +1404,9 @@ export class Renderer {
         this.writeReveal(tm, 'thaw', VIEW.w / 2, 215, clamp01((game.intro.t - 2.8) / 1.6));
       }
     }
-    if (game.mode === 'stageEnd') {
+    if (game.mode === 'stageEnd' || game.mode === 'transition') {
       const T = game.stageEndT;
-      tm.globalAlpha = 1;
+      tm.globalAlpha = game.mode === 'transition' ? 1 - clamp01(game.transition.t / 0.8) : 1;
       tm.font = `64px ${HAND}`;
       this.writeReveal(tm, game.level.closingLine.toLowerCase(), VIEW.w / 2, 190, clamp01((T - 3.2) / 2.6));
     }
@@ -1639,6 +1658,72 @@ export class Renderer {
       d[i * 4 + 3] = a * 255;
     }
     return this.growthImg;
+  }
+
+  // ---------- Between stages ----------
+
+  // Where the thaw has reached: it spreads out from her coal with a ragged edge, using the same noise as the
+  // frost's growth. k runs 0 (all frost) to 1 (all clear). Returns a mask, opaque where the frost has melted.
+  revealMask(k, px, py) {
+    if (!this.growth) this.growthMask(0);
+    if (!this.coverImg) this.coverImg = this.cmctx.createImageData(FW, FH);
+    const g = this.growth;
+    const d = this.coverImg.data;
+    const far = Math.hypot(Math.max(px, FW - px), Math.max(py, FH - py));
+    let i = 0;
+    for (let y = 0; y < FH; y++) {
+      for (let x = 0; x < FW; x++, i++) {
+        const th = 0.72 * (Math.hypot(x - px, y - py) / far) + 0.28 * g[i];
+        const a = Math.max(0, Math.min(1, (k - th) / 0.08));
+        d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255;
+        d[i * 4 + 3] = a * 255;
+      }
+    }
+    return this.coverImg;
+  }
+
+  // The window frosting over as she walks on, then melting open from her coal on the next stage.
+  drawCover(c, game) {
+    const tr = game.transition;
+    const f = this.cctx;
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    f.globalCompositeOperation = 'source-over';
+    f.clearRect(0, 0, FW, FH);
+    // The frost itself: the scene behind, blurred and whitened, with crystals in it.
+    f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+    f.drawImage(this.small, 0, 0, VIEW.w, VIEW_H);
+    f.fillStyle = 'rgba(196,216,228,0.62)';
+    f.fillRect(0, 0, VIEW.w, VIEW_H);
+    f.globalAlpha = 0.9;
+    const off = -(((game.camX % TILE_W) + TILE_W) % TILE_W);
+    for (let x = off; x < VIEW.w; x += TILE_W) f.drawImage(this.crystals, x, 0);
+    f.globalAlpha = 1;
+    // Cut away what is not frosted (yet), or what has melted.
+    const m = this.cmctx;
+    m.setTransform(1, 0, 0, 1, 0, 0);
+    if (tr.phase === 'out') {
+      m.putImageData(this.growthMask(smooth01(tr.t / TRANSITION.frostIn)), 0, 0);
+    } else {
+      const e = game.ember;
+      const k = smooth01((tr.t - 0.3) / (TRANSITION.thaw - 0.5)) * 1.04;
+      m.putImageData(this.revealMask(k, (e.x - game.camX) * FROST_SCALE, e.y * FROST_SCALE), 0, 0);
+    }
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    f.globalCompositeOperation = 'destination-out';
+    f.filter = 'blur(2px)';
+    f.drawImage(this.coverMask, 0, 0);
+    f.filter = 'none';
+    // The next stage's name, written into the frost as it melts.
+    if (tr.phase === 'in' && game.intro) {
+      f.setTransform(FROST_SCALE, 0, 0, FROST_SCALE, 0, 0);
+      f.fillStyle = '#fff';
+      f.font = `120px ${HAND}`;
+      f.textAlign = 'center';
+      this.writeReveal(f, game.level.name.toLowerCase(), VIEW.w / 2, 200, clamp01((game.intro.t - 0.6) / 1.6));
+    }
+    f.globalCompositeOperation = 'source-over';
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(this.cover, 0, 0, VIEW.w, VIEW_H);
   }
 
   // ---------- Before play ----------
