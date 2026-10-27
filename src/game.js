@@ -314,6 +314,14 @@ export class Game {
     const falling = e.fall && e.fall.t < CREVASSE.fallSeconds;
     // Buried she can only pulse; knocked down by an icicle she can do nothing for a moment.
     e.stun = Math.max(0, e.stun - dt);
+    if (e.burial) {
+      e.burial.t += dt;
+      e.burial.hit = Math.max(0, (e.burial.hit || 0) - dt * 2);
+    }
+    if (e.unburied) {
+      e.unburied.t += dt;
+      if (e.unburied.t > 0.9) e.unburied = null;
+    }
     const controllable = this.mode === 'play' && !this.lightsOut && !falling && !(this.intro && this.intro.t < this.introLock());
 
     this.updateWind(dt);
@@ -882,6 +890,7 @@ export class Game {
       e.wantLow = false;
       e.fall = null;
       e.burial = null;
+      e.unburied = null;
       e.stun = 0;
       e.y = groundY(e.x) - CHEST_HEIGHT;
       e.vx = 0;

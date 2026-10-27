@@ -81,15 +81,20 @@ function bury(g) {
   g.holdLock = true;
 }
 
-// One pulse while buried: the melt digs. Companions help, and the smith digs twice as fast.
+// One pulse while buried: the melt digs. Companions help a little and the smith a little more, but it always
+// takes a few pulses, so the melting can be seen.
 export function digOut(g) {
   const e = g.ember;
   const b = e.burial;
-  b.done += (1 + g.companions.length) * (g.companions.some((c) => c.home === 'smith') ? 2 : 1);
+  const smith = g.companions.some((c) => c.home === 'smith') ? AVALANCHE.smithDig : 1;
+  b.done += Math.min(AVALANCHE.maxDig, (1 + AVALANCHE.companionDig * g.companions.length) * smith);
+  b.hit = 1;
   g.audio.crack();
+  g.audio.melt();
   if (b.done >= b.need) {
     e.burial = null;
-    g.audio.melt();
+    // The last of the snow melts away outward from her.
+    e.unburied = { t: 0 };
     g.rings.push({ x: e.x, y: e.y, t: 0, r: 120, strong: true });
   }
 }

@@ -97,7 +97,10 @@ export const AVALANCHE = {
   shepherdRumble: 6, // with the shepherd walking with her, the warning comes this early
   slide: 2.6,
   hit: [0.9, 1.9], // when, in the slide, the snow is across the path
-  buryPulses: 6, // pulses to dig herself out (each companion adds one, the smith doubles it)
+  buryPulses: 6, // how much melting it takes to dig herself out: 6 pulses alone
+  companionDig: 0.3, // each companion adds this much to every pulse while she is buried
+  smithDig: 1.4, // the smith makes each pulse dig this much further
+  maxDig: 2, // never more than this per pulse, so it always takes at least 3 pulses
   buriedChill: 0.8, // extra warmth lost per second while buried
   millerLoss: 4, // a new slide over the miller undoes this much digging
 };

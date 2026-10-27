@@ -432,7 +432,7 @@ export class Renderer {
       c.fillStyle = `rgba(0,0,0,${1 - game.intro.t / 1.6})`;
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
-    if (game.ember.burial) this.drawBurial(c, game);
+    if (game.ember.burial || game.ember.unburied) this.drawBurial(c, game);
     if (!(game.intro && game.intro.t < game.introLock())) this.drawBar(c, game);
     if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
@@ -880,23 +880,75 @@ export class Renderer {
     s.restore();
   }
 
-  // Buried: snow all around, a pocket of air in front of her that grows with each pulse.
+  // Buried: snow all around her, and a pocket of air that her coal melts wider with each pulse. Each pulse sends
+  // a warm ring into the snow; the pocket's edge is wet and darker, and meltwater runs down from it. When she is
+  // free, the last of the snow melts away outward from her.
   drawBurial(c, game) {
     const e = game.ember;
     const b = e.burial;
     const x = e.x - game.camX;
     const y = e.y;
-    const R = 34 + 120 * (b.done / b.need);
+    const t = game.time;
+    let R;
+    let a = 0.95;
+    if (b) {
+      const target = b.done / b.need;
+      const dt = Math.max(0, t - (this.burialT ?? t));
+      this.burialT = t;
+      this.burialShown = (this.burialShown || 0) + (target - (this.burialShown || 0)) * Math.min(1, dt * 5);
+      R = 34 + 130 * this.burialShown + 8 * (b.hit || 0);
+    } else {
+      const k = smooth01(e.unburied.t / 0.9);
+      R = 170 + VIEW.w * 1.1 * k;
+      a = 0.95 * (1 - k);
+      this.burialShown = 0;
+    }
     c.save();
-    c.fillStyle = 'rgba(214,228,236,0.95)';
-    blobPath(c, x, y, R, 7, game.time);
+    c.fillStyle = `rgba(214,228,236,${a})`;
+    blobPath(c, x, y, R, 7, t);
     c.rect(0, 0, VIEW.w, VIEW_H);
     c.fill('evenodd');
-    // What to do, written on the snow itself, since the frost behind it cannot be seen.
-    c.font = `56px ${HAND}`;
-    c.textAlign = 'center';
-    c.fillStyle = 'rgba(30,50,62,0.7)';
-    c.fillText('pulse to dig yourself out', VIEW.w / 2, 200);
+    if (b) {
+      // The wet edge of the melt.
+      c.strokeStyle = 'rgba(120,150,165,0.55)';
+      c.lineWidth = 7;
+      blobPath(c, x, y, R + 3, 7, t);
+      c.stroke();
+      // Meltwater running down from the pocket.
+      c.strokeStyle = 'rgba(150,180,195,0.6)';
+      c.lineCap = 'round';
+      for (let i = 0; i < 7; i++) {
+        const ang = Math.PI * (0.15 + 0.7 * (i / 6));
+        const sx = x + Math.cos(ang) * R;
+        const sy = y + Math.sin(ang) * R * 0.95;
+        const len = (10 + 30 * this.burialShown) * (0.6 + 0.4 * Math.sin(i * 2.1 + t));
+        c.lineWidth = 2.5;
+        c.beginPath();
+        c.moveTo(sx, sy);
+        c.lineTo(sx + Math.sin(i) * 2, sy + len);
+        c.stroke();
+      }
+      c.lineCap = 'butt';
+      // Her coal glowing inside the pocket, brighter on each pulse.
+      c.globalCompositeOperation = 'lighter';
+      glow(c, x, y, R * 0.9, '255,170,90', 0.18 + 0.25 * (b.hit || 0));
+      c.globalCompositeOperation = 'source-over';
+      // Each pulse's warmth pushing out into the snow.
+      for (const r of game.rings) {
+        if (!r.strong) continue;
+        const p = r.t / PULSE.ringSeconds;
+        const rr = R * (0.6 + 0.9 * (1 - Math.pow(1 - p, 3)));
+        c.strokeStyle = `rgba(255,190,120,${0.55 * (1 - p)})`;
+        c.lineWidth = 4 * (1 - p) + 1;
+        c.beginPath();
+        c.arc(x, y, rr, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.font = `56px ${HAND}`;
+      c.textAlign = 'center';
+      c.fillStyle = 'rgba(30,50,62,0.7)';
+      c.fillText('pulse to dig yourself out', VIEW.w / 2, 200);
+    }
     c.restore();
   }
 
