@@ -41,13 +41,44 @@ const FIRE_SRC = 'audio/sfx/fire.mp3';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
+// One sound effect, with a few players kept ready and reused. Making a new player for every footstep or
+// heartbeat makes the browser load and decode the file again each time, which can stall a frame.
+class SoundPool {
+  constructor(srcs, size = 2) {
+    this.sets = srcs.map((src) => Array.from({ length: size }, () => {
+      const el = new Audio(src);
+      el.preload = 'auto';
+      el.preservesPitch = false;
+      return el;
+    }));
+  }
+
+  play(volume, rate, muted) {
+    const set = this.sets[Math.floor(Math.random() * this.sets.length)];
+    const el = set.find((a) => a.paused || a.ended) || set.reduce((a, b) => (a.currentTime > b.currentTime ? a : b));
+    el.pause();
+    el.currentTime = 0;
+    el.playbackRate = rate;
+    el.volume = clamp01(volume);
+    el.muted = muted;
+    el.play().catch(() => {});
+  }
+}
+
 // A recording that loops forever. Two copies crossfade over the seam so the loop has no gap or click.
+// Both copies are made (and start loading) up front, not the first time the loop is heard.
 class FileLoop {
   constructor(src, fade = 2.5, rate = 1) {
     this.src = src;
     this.rate = rate;
     this.fade = fade;
-    this.els = null;
+    this.els = [new Audio(src), new Audio(src)];
+    this.els.forEach((e) => {
+      e.preload = 'auto';
+      e.volume = 0;
+      e.preservesPitch = false;
+      e.playbackRate = rate;
+    });
     this.cur = 0;
     this.vol = 0;
     this.target = 0;
@@ -62,20 +93,11 @@ class FileLoop {
 
   setMuted(m) {
     this.muted = m;
-    if (this.els) this.els.forEach((e) => { e.muted = m; });
+    this.els.forEach((e) => { e.muted = m; });
   }
 
   tick() {
-    if (!this.els) {
-      this.els = [new Audio(this.src), new Audio(this.src)];
-      this.els.forEach((e) => {
-        e.volume = 0;
-        e.muted = this.muted;
-        e.preservesPitch = false;
-        e.playbackRate = this.rate;
-      });
-      this.els[0].play().catch(() => {});
-    }
+    if (this.els[this.cur].paused && this.target > 0) this.els[this.cur].play().catch(() => {});
     this.vol += (this.target - this.vol) * 0.12;
     if (Math.abs(this.target - this.vol) < 0.002) this.vol = this.target;
     const a = this.els[this.cur];
@@ -122,6 +144,21 @@ export class GameAudio {
     this.coldMusic = new FileLoop(COLD_MUSIC_SRC, 4);
     this.restMusic = new FileLoop(REST_MUSIC_SRC, 4);
     this.loops = [this.wind, this.storm, this.fire, this.stageMusic, this.coldMusic, this.restMusic];
+    // Every sound effect is loaded once, while the title screen is up.
+    this.sfx = {
+      heart: new SoundPool(HEART_SRC),
+      step: new SoundPool(STEP_SRC, 3),
+      crack: new SoundPool(CRACK_SRC),
+      pulse: new SoundPool(PULSE_SRC),
+      melt: new SoundPool(MELT_SRC),
+      refreeze: new SoundPool(REFREEZE_SRC),
+      lightsOut: new SoundPool(LIGHTS_OUT_SRC, 1),
+      ember: new SoundPool(EMBER_SRC),
+      chime: new SoundPool(CHIME_SRC),
+    };
+    // The hum is played by a loop per frozen thing; loading it once here puts it in the browser's cache.
+    this.humPreload = new Audio(HUM_SRC);
+    this.humPreload.preload = 'auto';
     this.resting = false;
   }
 
@@ -175,23 +212,17 @@ export class GameAudio {
 
   heartbeat(warmth) {
     if (this.muted) return;
-    const el = new Audio(HEART_SRC[Math.floor(Math.random() * HEART_SRC.length)]);
-    el.volume = warmth < 35 ? 0.8 : 0.55;
-    el.play().catch(() => {});
+    this.sfx.heart.play(warmth < 35 ? 0.8 : 0.55, 1, false);
   }
 
   pulse() {
-    this.playOne(PULSE_SRC, 0.5);
+    this.playOne(this.sfx.pulse, 0.5);
   }
 
-  // One recording from a list, with a little variation in pitch so repeats do not sound identical.
-  playOne(list, volume, spread = 0.08) {
+  // One sound from a pool, with a little variation in pitch so repeats do not sound identical.
+  playOne(pool, volume, spread = 0.08) {
     if (this.muted) return;
-    const el = new Audio(list[Math.floor(Math.random() * list.length)]);
-    el.preservesPitch = false;
-    el.playbackRate = 1 - spread + Math.random() * 2 * spread;
-    el.volume = clamp01(volume);
-    el.play().catch(() => {});
+    pool.play(volume, 1 - spread + Math.random() * 2 * spread, false);
   }
 
   // The fire crackles louder as she nears it: 0 = out of earshot, 1 = beside it.
@@ -202,40 +233,34 @@ export class GameAudio {
   // One boot landing in the snow. Each step varies a little in pitch and weight.
   footstep() {
     if (this.muted) return;
-    const el = new Audio(STEP_SRC[Math.floor(Math.random() * STEP_SRC.length)]);
-    el.preservesPitch = false;
-    el.playbackRate = 0.9 + Math.random() * 0.2;
-    el.volume = 0.22 + Math.random() * 0.12;
-    el.play().catch(() => {});
+    this.sfx.step.play(0.22 + Math.random() * 0.12, 0.9 + Math.random() * 0.2, false);
   }
 
   crack() {
     if (this.muted) return;
-    const el = new Audio(CRACK_SRC[Math.floor(Math.random() * CRACK_SRC.length)]);
-    el.volume = 0.55 + Math.random() * 0.25;
-    el.play().catch(() => {});
+    this.sfx.crack.play(0.55 + Math.random() * 0.25, 1, false);
   }
 
   melt() {
-    this.playOne(MELT_SRC, 0.8, 0.05);
+    this.playOne(this.sfx.melt, 0.8, 0.05);
   }
 
   // The cold closing over what you didn't choose.
   refreeze() {
-    this.playOne(REFREEZE_SRC, 0.9, 0.05);
+    this.playOne(this.sfx.refreeze, 0.9, 0.05);
   }
 
   // Picking up an ember: a short crackle of fire.
   ember() {
-    this.playOne(EMBER_SRC, 0.8, 0.06);
+    this.playOne(this.sfx.ember, 0.8, 0.06);
   }
 
   chime() {
-    this.playOne(CHIME_SRC, 0.6, 0.03);
+    this.playOne(this.sfx.chime, 0.6, 0.03);
   }
 
   lightsOut() {
-    this.playOne(LIGHTS_OUT_SRC, 0.9, 0);
+    this.playOne(this.sfx.lightsOut, 0.9, 0);
   }
 
   // Each frozen thing hums as she nears it. freq sets the pitch; level 0.04 is right beside it.
