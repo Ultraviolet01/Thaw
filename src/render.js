@@ -489,7 +489,7 @@ export class Renderer {
     const t = game.time;
     // High on a mountain the far hills sit lower on the screen.
     const lift = game.level.altitude ? Math.max(0, Math.min(320, 600 - groundY(cam + VIEW.w * 0.42))) * 0.8 : 0;
-    this.drawSky(s, cam, t, lift);
+    this.drawSky(s, cam, t, lift, game);
     s.save();
     s.translate(-cam, 0);
     this.drawMountainside(s, game, t);
@@ -659,7 +659,7 @@ export class Renderer {
     }
   }
 
-  drawSky(s, cam, t, lift = 0) {
+  drawSky(s, cam, t, lift = 0, game = null) {
     const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.7);
     g.addColorStop(0, C.skyTop);
     g.addColorStop(1, C.skyBottom);
@@ -680,12 +680,17 @@ export class Renderer {
       glow(s, VIEW.w * 0.88, VIEW_H * 0.62, 620, '230,160,110', 0.16 * dawn);
       s.restore();
     }
+    // Each stage has its own far landmark, so a glance tells where she is.
+    const mark = this.levelRef && this.levelRef.landmark;
+    const clear = mark === 'moon' ? 1.5 : 1;
     for (const st of this.stars) {
       const x = (((st.x - cam * 0.04) % VIEW.w) + VIEW.w) % VIEW.w;
-      const a = st.a * (0.6 + 0.4 * Math.sin(t * st.tw + st.x)) * (1 - 0.8 * dawn);
+      const a = Math.min(1, st.a * clear * (0.6 + 0.4 * Math.sin(t * st.tw + st.x)) * (1 - 0.8 * dawn));
       s.fillStyle = `rgba(215,232,245,${a})`;
       s.fillRect(x, st.y, st.s, st.s);
     }
+    if (mark === 'moon') this.drawMoon(s, cam);
+    if (mark === 'range') this.drawRange(s, cam, lift);
     const ridges = [
       [0.12, 9, (x) => 330 - Math.abs(Math.sin(x * 0.0024)) * 120 - Math.sin(x * 0.009) * 16],
       [0.25, 12, (x) => 395 - Math.abs(Math.sin(x * 0.0033 + 0.7)) * 95 - Math.sin(x * 0.013) * 10],
@@ -735,7 +740,165 @@ export class Renderer {
       }
       s.closePath();
       s.fill();
+      if (i <= 1 && mark === 'banners') this.drawBanners(s, fn, off, t, game ? game.wind.strength : 0, i);
+      if (i === 1 && mark === 'village') this.drawFarVillage(s, fn, off);
     });
+  }
+
+  // The Still: a thin crescent moon low in a clear sky.
+  drawMoon(s, cam) {
+    const x = VIEW.w * 0.26 - cam * 0.01;
+    const y = 112;
+    glow(s, x, y, 150, '214,228,238', 0.12);
+    s.fillStyle = '#e4edf2';
+    s.beginPath();
+    s.arc(x, y, 24, 0, Math.PI * 2);
+    s.fill();
+    // The dark of the sky takes most of the disc, leaving a crescent.
+    s.fillStyle = mix(C.skyTop, C.skyBottom, (y - 6) / (VIEW_H * 0.7));
+    s.beginPath();
+    s.arc(x + 10, y - 6, 23, 0, Math.PI * 2);
+    s.fill();
+  }
+
+  // The Slopes: a high range far behind everything, its peaks capped with snow.
+  drawRange(s, cam, lift) {
+    const off = cam * 0.05;
+    const base = 340 + lift * 0.3;
+    // How high the range stands at x: sharp peaks of different sizes, with smaller jags along the ridges.
+    const height = (x) => {
+      const tri = (p, ph) => 1 - Math.abs((((x + ph) / p) % 1) * 2 - 1);
+      return 210 * Math.pow(tri(610, 140), 2.2) + 95 * Math.pow(tri(270, 40), 2) + 22 * Math.pow(tri(70, 10), 1.5) + 8 * Math.sin(x * 0.05);
+    };
+    s.fillStyle = '#6a8390';
+    s.beginPath();
+    s.moveTo(0, VIEW_H);
+    for (let x = 0; x <= VIEW.w + 6; x += 6) s.lineTo(x, base - height(x + off));
+    s.lineTo(VIEW.w, VIEW_H);
+    s.closePath();
+    s.fill();
+    // Snow caps that follow each peak down its flanks: thicker on the high peaks, none on the low ridges.
+    s.fillStyle = '#a7bac4';
+    s.beginPath();
+    for (let x = 0; x <= VIEW.w + 6; x += 6) {
+      const y = base - height(x + off);
+      if (x === 0) s.moveTo(x, y);
+      else s.lineTo(x, y);
+    }
+    for (let x = VIEW.w + 6; x >= 0; x -= 6) {
+      const h = height(x + off);
+      s.lineTo(x, base - h + Math.max(0, h - 110) * 0.45 + 2 * Math.sin(x * 0.2));
+    }
+    s.closePath();
+    s.fill();
+  }
+
+  // The Wind: snow streaming off the crests of the far ridge, blown from the right, harder in a gust.
+  drawBanners(s, fn, off, t, wind, layer) {
+    const size = layer === 0 ? 0.75 : 1;
+    for (let x = 30; x < VIEW.w + 60; x += 12) {
+      const y = fn(x + off);
+      if (!(y < fn(x - 36 + off) && y < fn(x + 36 + off) && y <= fn(x - 12 + off) && y <= fn(x + 12 + off))) continue;
+      const k = 0.55 + 0.45 * wind;
+      for (let j = 0; j < 16; j++) {
+        const q = (j + ((t * (0.9 + wind)) % 1)) / 16;
+        const px = x - q * (170 + 130 * wind) * size;
+        const py = y - 4 - q * 16 * size + Math.sin(t * 2 + j + x) * 2;
+        s.fillStyle = `rgba(234,243,248,${0.6 * k * (1 - q) * (1 - q * 0.3)})`;
+        s.beginPath();
+        s.ellipse(px, py, (6 + q * 22) * size, (2.5 + q * 6) * size, -0.08, 0, Math.PI * 2);
+        s.fill();
+      }
+    }
+  }
+
+  // Home: the village on a far ridge as she comes in, dark and cold.
+  drawFarVillage(s, fn, off) {
+    const homes = [1020, 1066, 1124, 1168, 1230, 1280, 1342, 1388, 1450];
+    for (const [i, lx] of homes.entries()) {
+      const x = lx - off;
+      if (x < -40 || x > VIEW.w + 40) continue;
+      const w = 28 + (i % 3) * 6;
+      const h = 16 + (i % 2) * 5;
+      const base = fn(lx) + 3;
+      s.fillStyle = '#2b404c';
+      s.fillRect(x - w / 2, base - h, w, h);
+      s.beginPath();
+      s.moveTo(x - w / 2 - 3, base - h + 1);
+      s.lineTo(x, base - h - w * 0.42);
+      s.lineTo(x + w / 2 + 3, base - h + 1);
+      s.closePath();
+      s.fill();
+      s.fillRect(x + w * 0.18, base - h - w * 0.42, 4, 8);
+      s.strokeStyle = 'rgba(214,230,238,0.55)';
+      s.lineWidth = 1.5;
+      s.beginPath();
+      s.moveTo(x - w / 2 - 2, base - h);
+      s.lineTo(x, base - h - w * 0.42 + 1);
+      s.lineTo(x + w / 2 + 2, base - h);
+      s.stroke();
+    }
+  }
+
+  // The Lake: the ferry, frozen into the ice by the near shore, and what is left of its pier.
+  drawFerry(s) {
+    const post = (x, h, lean) => {
+      const gy = groundY(x) + 4;
+      s.fillStyle = '#5a6b75';
+      s.beginPath();
+      s.moveTo(x - 4, gy);
+      s.lineTo(x - 3 + lean, gy - h);
+      s.lineTo(x + 3 + lean, gy - h);
+      s.lineTo(x + 4, gy);
+      s.closePath();
+      s.fill();
+      s.fillStyle = 'rgba(226,238,244,0.85)';
+      s.fillRect(x - 4 + lean, gy - h - 3, 8, 3);
+    };
+    [[560, 46, 0], [610, 42, 1], [660, 38, -1], [712, 34, 2], [764, 20, 3]].forEach(([x, h, l]) => post(x, h, l));
+    // A plank still across the first posts; the rest have gone.
+    s.fillStyle = '#5a6b75';
+    s.beginPath();
+    s.moveTo(556, groundY(556) - 34);
+    s.lineTo(664, groundY(664) - 30);
+    s.lineTo(664, groundY(664) - 26);
+    s.lineTo(556, groundY(556) - 30);
+    s.closePath();
+    s.fill();
+    // The ferry, tilted where the ice took it, its mast bare.
+    const bx = 860;
+    const gy = groundY(bx) + 6;
+    s.save();
+    s.translate(bx, gy);
+    s.rotate(-0.06);
+    s.fillStyle = '#6b7c86';
+    s.beginPath();
+    s.moveTo(-84, -26);
+    s.quadraticCurveTo(-66, 8, -14, 10);
+    s.lineTo(58, 10);
+    s.quadraticCurveTo(88, 2, 92, -30);
+    s.closePath();
+    s.fill();
+    s.strokeStyle = '#4c5c66';
+    s.lineWidth = 1.5;
+    for (const yy of [-16, -6]) {
+      s.beginPath();
+      s.moveTo(-76, yy);
+      s.lineTo(84, yy);
+      s.stroke();
+    }
+    s.fillStyle = '#62737d';
+    s.fillRect(-4, -124, 5, 100);
+    s.fillRect(-38, -100, 76, 4);
+    s.fillStyle = 'rgba(232,242,248,0.95)';
+    s.fillRect(-82, -30, 172, 5);
+    s.fillRect(-38, -104, 76, 3);
+    s.restore();
+    // Ice heaped against the hull.
+    s.fillStyle = 'rgba(226,238,245,0.95)';
+    s.beginPath();
+    s.ellipse(bx - 6, gy + 5, 112, 9, 0, Math.PI, 0);
+    s.fill();
   }
 
   // Snow is the brightest thing in a snow scene, so the ground is pale and the figures read dark against it.
@@ -1299,6 +1462,7 @@ export class Renderer {
     for (const rx of L.rocks || []) if (rx > x0 - 100 && rx < x1 + 100) this.drawRock(s, rx);
     if (L.cairn) this.drawCairn(s, L.cairn.x, t, game.wind.strength);
     if (L.camp) this.drawCamp(s, L.camp.x, t);
+    if (L.landmark === 'ferry' && x0 < 1000 && x1 > 480) this.drawFerry(s);
     if (L.lake) this.drawIce(s, game, x0, x1, t);
     const end = endingLook(game);
     if (end) this.drawSpring(s, game, x0, x1, t, end);

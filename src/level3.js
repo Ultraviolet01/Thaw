@@ -26,6 +26,8 @@ export const level3 = {
   spawn: { x: 180, y: 470 },
   // How far the night has turned toward dawn: a little more warmth low in the sky with every stage.
   dawn: 0.25,
+  // The far landmark that marks this stage.
+  landmark: 'range',
   ground,
   // The far hills sink as she climbs, so the height can be felt.
   altitude: true,

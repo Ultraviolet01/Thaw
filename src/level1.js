@@ -4,6 +4,8 @@ export const level1 = {
   name: 'The Still',
   width: 4600,
   spawn: { x: 160, y: 470 },
+  // The far landmark that marks this stage.
+  landmark: 'moon',
   objects: [
     { type: 'tree', x: 720, pulses: 3 },
     // The fork: warm the light (safety now) or the wanderer beside it (connection later). Only one.

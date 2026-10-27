@@ -29,6 +29,8 @@ export const level2 = {
   spawn: { x: 180, y: 470 },
   // How far the night has turned toward dawn: a little more warmth low in the sky with every stage.
   dawn: 0.12,
+  // The far landmark that marks this stage.
+  landmark: 'banners',
   ground: ridge,
   lower: { x0: X0, x1: X1, floor: gully, ceiling },
   // What is left of the first stage's fire, where she wakes.
