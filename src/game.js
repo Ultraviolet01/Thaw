@@ -52,7 +52,7 @@ export class Game {
     // goes back to how things stood when the stage began.
     this.ledger = this.ledgerAtStageStart
       ? JSON.parse(JSON.stringify(this.ledgerAtStageStart))
-      : { saved: [], lost: [], forks: {}, carry: [] };
+      : { saved: [], lost: [], forks: {}, carry: [], trees: 0 };
     this.coldTimer = 0;
     // A line the frost says for a few seconds: a companion's fire going out, the wind breaking a pulse.
     this.note = null;
@@ -198,6 +198,12 @@ export class Game {
   // Back to the title and the prologue, with every choice forgotten: the same as opening the game fresh.
   startOver() {
     location.reload();
+  }
+
+  // How many of this stage's trees she has brought back.
+  treesThisStage() {
+    const all = this.objects.filter((o) => o.type === 'tree');
+    return { warmed: all.filter((o) => o.state === 'melting' || o.state === 'thawed').length, total: all.length };
   }
 
   // How many of this stage's frozen villagers are walking with her now.
@@ -599,6 +605,21 @@ export class Game {
       nearHeat = true;
     }
 
+    // A thawed tree warms her back a little, once it has fully come to life.
+    for (const o of this.objects) {
+      if (o.type !== 'tree' || o.state !== 'thawed') continue;
+      const d = Math.abs(e.x - o.x);
+      const r = WARMTH.treeRadius * o.spread;
+      if (d < r && !!o.low === (e.low && inLower(e.x))) {
+        delta += WARMTH.treeHealPerSecond * (1 - (d / r) * 0.5);
+        nearHeat = true;
+        if (!this.treeTold && e.warmth < 92) {
+          this.treeTold = true;
+          this.say('a warm tree warms you back', o.x);
+        }
+      }
+    }
+
     const inCave = e.low && inLower(e.x);
     if (!nearHeat) delta -= WARMTH.drainPerSecond;
     for (const m of this.level.mist) {
@@ -710,6 +731,8 @@ export class Game {
   onThawed(o) {
     o.thawedAt = this.time;
     if (o.type === 'lantern') this.hintFlags.lanternLit = true;
+    // Every tree brought back counts toward how green the world is at the end.
+    if (o.type === 'tree') this.ledger.trees = (this.ledger.trees || 0) + 1;
     this.audio.unlockLayer();
     this.audio.chime();
     this.audio.setHum(o.id, 0, 0);

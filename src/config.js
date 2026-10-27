@@ -16,6 +16,9 @@ export const WARMTH = {
   pulseCost: 2,
   mistDrainPerSecond: 2.2,
   lanternHealPerSecond: 6,
+  // A tree once thawed gives off a little warmth: a small resting spot, about half a lantern.
+  treeHealPerSecond: 3,
+  treeRadius: 170,
   fireHealPerSecond: 40,
   fireRadius: 320,
   // Below this warmth for relapseAfter seconds, the last companion's fire goes out and they freeze again.

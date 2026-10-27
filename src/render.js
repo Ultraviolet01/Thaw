@@ -2453,7 +2453,9 @@ export class Renderer {
     const b = clamp01((T - 5.8) / 1);
     c.font = `italic 300 17px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${b})`;
-    c.fillText(`companions found: ${game.foundThisStage()} of ${game.totalWanderers}`, VIEW.w / 2, 250);
+    const trees = game.treesThisStage();
+    const treeLine = trees.total ? `   ·   trees warmed: ${trees.warmed} of ${trees.total}` : '';
+    c.fillText(`companions found: ${game.foundThisStage()} of ${game.totalWanderers}${treeLine}`, VIEW.w / 2, 250);
     // What was chosen at each fork in this stage.
     const forks = game.level.forks || {};
     const said = Object.keys(game.choices).map((k) => forks[k] && forks[k][game.choices[k]]).filter(Boolean);
