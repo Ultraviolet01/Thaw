@@ -8,6 +8,7 @@ import { POT_HEIGHT } from './character.js';
 import { villagerName } from './village.js';
 import { setUpSlopes, updateSlopes, digOut, shaking } from './slopes.js';
 import { setUpLake, updateLake, pulseOnIce, inStorm } from './lake.js';
+import { loadSave, saveStageStart, saveFinish, clearCurrent } from './save.js';
 
 // The player is a child; the villagers she finds are grown-ups.
 export const PLAYER_SCALE = 1.4;
@@ -42,6 +43,10 @@ export class Game {
     this.intro = null;
     this.time = 0;
     this.titleFade = 1;
+    // What the browser remembers from earlier visits: a walk to continue, stages to pick, the best walk so far.
+    this.saved = loadSave();
+    // The first time she finds somewhere to wake, the frost says so. Once a visit is enough.
+    this.toldCheckpoint = false;
     this.reset();
     this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
   }
@@ -105,6 +110,10 @@ export class Game {
       gusted: false, sheltered: false, routeChosen: false, avalanched: false, quaked: false, fellIn: false, whitedOut: false,
     };
     this.choices = {};
+    this.finishRecorded = false;
+    this.ending = null;
+    this.endingNew = false;
+    this.wentLow = false;
     this.barFlash = 6;
     this.flashed = new Set();
     this.audio.resetLayers();
@@ -113,13 +122,7 @@ export class Game {
   update(dt, input) {
     this.time += dt;
     if (this.mode === 'title') {
-      if (input.anyPressed) {
-        this.audio.start();
-        this.mode = 'prologue';
-        this.prologue = new Prologue();
-        setTerrain(prologueGround);
-        this.audio.playTheme();
-      }
+      this.updateTitle(input);
       return;
     }
 
@@ -193,12 +196,65 @@ export class Game {
     this.simulate(dt, input);
   }
 
+  // The title: continue the walk in progress, begin a new one, or pick up any stage reached before.
+  // With nothing remembered, any key begins, as it always has.
+  updateTitle(input) {
+    const sv = this.saved;
+    for (let i = 0; i <= Math.min(sv.reached, this.levels.length - 1); i++) {
+      if (sv.reached > 0 && input.wasPressed(`Digit${i + 1}`) && (i === 0 || sv.starts[i])) {
+        this.audio.start();
+        this.startAt(i, i === 0 ? { ledger: null, companions: [] } : sv.starts[i]);
+        return;
+      }
+    }
+    if (sv.current && input.wasPressed('KeyN')) {
+      this.beginWalk();
+      return;
+    }
+    if (!input.anyPressed) return;
+    if (sv.current) {
+      this.audio.start();
+      this.startAt(sv.current.stage, sv.current);
+      return;
+    }
+    this.beginWalk();
+  }
+
+  // A new walk from the very beginning: the prologue, then the first stage.
+  beginWalk() {
+    this.audio.start();
+    this.mode = 'prologue';
+    this.prologue = new Prologue();
+    setTerrain(prologueGround);
+    this.audio.playTheme();
+  }
+
+  // Straight into a stage from the title, as things stood when it last began.
+  startAt(i, snap) {
+    this.ledgerAtStageStart = snap.ledger ? JSON.parse(JSON.stringify(snap.ledger)) : null;
+    this.companionsAtStageStart = [...(snap.companions || [])];
+    this.stage = i;
+    this.level = this.levels[i];
+    setTerrain(this.level.ground, this.level.lower);
+    this.reset();
+    this.ledgerAtStageStart = JSON.parse(JSON.stringify(this.ledger));
+    this.audio.setPrologueMusic(0);
+    this.audio.setWind(0);
+    this.audio.resetLayers();
+    this.mode = 'play';
+    this.intro = i === 0 ? { t: 0, pulsed: false } : { t: 0, pulsed: false, kind: 'walk' };
+    this.titleFade = 1;
+    this.holdLock = true;
+    saveStageStart(i, this.ledger, this.companionsAtStageStart);
+  }
+
   startOverPressed(input) {
     return input.wasPressed('Enter') || input.wasPressed('NumpadEnter');
   }
 
   // Back to the title and the prologue, with every choice forgotten: the same as opening the game fresh.
   startOver() {
+    clearCurrent();
     location.reload();
   }
 
@@ -214,6 +270,11 @@ export class Game {
     return this.companions.filter((c) => homes.includes(c.home)).length;
   }
 
+  // Everyone in the village who can be found on the whole walk.
+  totalVillagers() {
+    return this.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'wanderer' && o.home).length, 0);
+  }
+
   hasNextStage() {
     return this.stage + 1 < this.levels.length;
   }
@@ -227,6 +288,7 @@ export class Game {
     this.level = this.levels[i];
     setTerrain(this.level.ground, this.level.lower);
     this.reset();
+    saveStageStart(i, this.ledger, this.companionsAtStageStart);
     this.audio.setFire(0);
     this.mode = 'play';
     this.intro = { t: 0, pulsed: false, kind: 'walk' };
@@ -256,6 +318,7 @@ export class Game {
     this.intro = { t: 0, pulsed: false };
     this.titleFade = 1;
     this.holdLock = true;
+    saveStageStart(0, this.ledger, []);
   }
 
   // The first seconds of the stage: out of black, the figure rises from the snow, its ember pulses once and
@@ -405,6 +468,8 @@ export class Game {
 
     this.updateWarmth(dt);
     this.updateObjects(dt);
+    if (e.low) this.wentLow = true;
+    this.updateMissed();
     this.updateCompanions(dt);
     this.updateEffects(dt);
     this.updatePickups(dt);
@@ -761,8 +826,39 @@ export class Game {
     }
   }
 
+  // Walk on far past someone still frozen and the frost says so, once: they can still be reached, if she turns back.
+  // Someone down in the cave she never went into is only "someone".
+  updateMissed() {
+    const e = this.ember;
+    if (this.lightsOut || this.mode !== 'play' || this.fire.reached) return;
+    if (this.note && this.time - this.note.t < 6) return;
+    const left = this.objects.filter((o) => o.type === 'wanderer' && o.home && o.state === 'frozen' && !o.missTold && !o.relapsed);
+    const first = left.find((o) => e.x - o.x > 650);
+    if (!first) return;
+    // People frozen side by side are spoken of together.
+    const group = left.filter((o) => Math.abs(o.x - first.x) < 250 && !!o.low === !!first.low);
+    group.forEach((o) => { o.missTold = true; });
+    const unseen = first.low && !this.wentLow;
+    const names = group.map((o) => villagerName(o.home));
+    const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    let text = `${who} ${names.length > 1 ? 'are' : 'is'} still frozen back there`;
+    if (unseen) text = 'someone was down in the cave';
+    else if (first.buried) text = `${who} is still under the snow back there`;
+    this.say(text, e.x);
+  }
+
   onThawed(o) {
     o.thawedAt = this.time;
+    // A lit lantern, or someone she has freed, is where she wakes if her light goes out. Not down in the cave
+    // or under the snow, where waking would put her straight back in the hazard.
+    if ((o.type === 'lantern' || o.type === 'wanderer') && !o.low && !o.buried && o.x > this.checkpoint.x) {
+      const cx = o.type === 'lantern' ? o.x + 16 : o.x;
+      this.checkpoint = { x: cx, y: groundY(cx) - 60 };
+      if (!this.toldCheckpoint) {
+        this.toldCheckpoint = true;
+        this.say('if your light goes out, you will wake here', cx);
+      }
+    }
     if (o.type === 'lantern') this.hintFlags.lanternLit = true;
     // Every tree brought back counts toward how green the world is at the end.
     if (o.type === 'tree') this.ledger.trees = (this.ledger.trees || 0) + 1;
@@ -885,6 +981,14 @@ export class Game {
       this.intro = null;
       this.titleFade = 0;
       this.recordStage();
+      // The last fire: the walk is over. Remember how it went.
+      if (!this.hasNextStage() && !this.finishRecorded) {
+        this.finishRecorded = true;
+        const before = this.saved.endings;
+        this.ending = saveFinish({ n: this.ledger.saved.length, all: this.totalVillagers() }, this.ledger.trees || 0);
+        this.endingNew = !before.includes(this.ending);
+        this.saved = loadSave();
+      }
       const cx = this.fire.x - 60;
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
       this.audio.unlockLayer();

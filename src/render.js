@@ -6,6 +6,7 @@ import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './pr
 import { VILLAGE } from './village.js';
 import { rumbleSeconds, shaking } from './slopes.js';
 import { inStorm } from './lake.js';
+import { ENDINGS } from './save.js';
 
 // Art direction: the whole world sits behind frost, like a window in winter.
 // Warmth melts clear patches in the frost. Everything else is seen blurred and pale through it.
@@ -2246,12 +2247,39 @@ export class Renderer {
     c.fillRect(0, 0, this.canvas.width, this.canvas.height);
     c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
     c.textAlign = 'center';
+    const sv = game.saved;
+    const cur = sv.current && game.levels[sv.current.stage];
+    const cx = VIEW.w / 2;
+    const cy = VIEW_H / 2 - (sv.reached > 0 ? 40 : 0);
     c.font = `300 17px ${SERIF}`;
     c.fillStyle = `rgba(214,226,234,${clamp01(t / 1.5) * (0.55 + 0.35 * Math.sin(t * 2))})`;
-    c.fillText('press any key to begin', VIEW.w / 2, VIEW_H / 2);
+    c.fillText(cur ? 'press any key to continue' : 'press any key to begin', cx, cy);
+    const fade = clamp01((t - 0.8) / 1.5);
+    c.font = `italic 300 15px ${SERIF}`;
+    c.fillStyle = `rgba(190,206,216,${0.75 * fade})`;
+    if (cur) {
+      c.fillText(`stage ${sv.current.stage + 1}, ${cur.name.toLowerCase()}`, cx, cy + 28);
+      c.fillText('N for a new walk, from the beginning', cx, cy + 56);
+    }
+    // Any stage reached before can be walked again, as things stood when it began.
+    if (sv.reached > 0) {
+      const names = game.levels.slice(0, sv.reached + 1).map((L, i) => `${i + 1}  ${L.name.toLowerCase()}`);
+      c.font = `300 14px ${SERIF}`;
+      c.fillStyle = `rgba(160,178,190,${0.7 * fade})`;
+      c.fillText('or press the number of a stage:', cx, cy + 104);
+      c.fillText(names.join('      '), cx, cy + 128);
+    }
+    // The record of finished walks: the best one, and how many of the endings have been seen.
+    if (sv.finished > 0 && sv.best) {
+      const trees = game.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'tree').length, 0);
+      c.font = `italic 300 14px ${SERIF}`;
+      c.fillStyle = `rgba(214,190,150,${0.75 * fade})`;
+      c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 176);
+      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}`, cx, cy + 200);
+    }
     c.font = `italic 300 14px ${SERIF}`;
-    c.fillStyle = `rgba(160,178,190,${0.6 * clamp01((t - 0.8) / 1.5)})`;
-    c.fillText('best with sound on   ·   F for full screen', VIEW.w / 2, VIEW_H / 2 + 34);
+    c.fillStyle = `rgba(160,178,190,${0.6 * fade})`;
+    c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 40);
   }
 
   // The prologue: the world before the cold, then the cold, drawn with the same pieces as the game.
@@ -2685,6 +2713,13 @@ export class Renderer {
       c.fillText(carried.map((x) => x.text).join('  '), VIEW.w / 2, 308);
     }
     this.drawVillage(c, game, b);
+    // At the end of the whole walk: how many of the endings have now been seen.
+    if (game.ending) {
+      c.font = `italic 300 15px ${SERIF}`;
+      c.fillStyle = `rgba(22,40,50,${0.8 * b})`;
+      const found = `endings found: ${game.saved.endings.length} of ${ENDINGS.length}`;
+      c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 474);
+    }
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
     const on = game.hasNextStage() ? 'space to walk on' : 'space to keep wandering';
