@@ -37,7 +37,7 @@ const SIZES = {
   tree: { w: 132, h: 170, dx: 0 },
   lantern: { w: 56, h: 130, dx: 8 },
   wanderer: { w: 56, h: 92, dx: 0 },
-  heart: { w: 300, h: 440, dx: 0 },
+  hearth: { w: 120, h: 60, dx: 0 },
 };
 
 // World-space box around a frozen object, used for pulse reach and the frost effects.

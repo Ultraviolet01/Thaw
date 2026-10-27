@@ -9,6 +9,7 @@ import { villagerName } from './village.js';
 import { setUpSlopes, updateSlopes, digOut, shaking } from './slopes.js';
 import { setUpLake, updateLake, pulseOnIce, inStorm } from './lake.js';
 import { loadSave, saveStageStart, saveFinish, clearCurrent } from './save.js';
+import { setUpHomes, updateHomes, doorX } from './home.js';
 
 // The player is a child; the villagers she finds are grown-ups.
 export const PLAYER_SCALE = 1.4;
@@ -16,7 +17,7 @@ export const COMPANION_SCALE = 1.6;
 // The ember pot is carried this far above the feet, at scale 1.
 const CHEST = POT_HEIGHT;
 export const CHEST_HEIGHT = CHEST * PLAYER_SCALE;
-const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66 };
+const HUM_FREQ = { tree: 1318.51, lantern: 1567.98, wanderer: 1174.66, hearth: 1046.5 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // Seconds of the first stage's intro (rising from the snow) before the player can move.
 export const INTRO_LOCK = 3.2;
@@ -25,6 +26,8 @@ const WALK_ON_LOCK = 1.4;
 // Between stages: she walks on while frost closes over the window, then her coal melts it open on the next stage.
 export const TRANSITION = { frostIn: 2.2, hold: 0.35, thaw: 3.2 };
 const between = ([a, b]) => a + Math.random() * (b - a);
+// Seconds into the ending before a key press goes back to the title.
+export const ENDING_DONE = 19;
 
 export class Game {
   constructor(levels, audio) {
@@ -64,7 +67,7 @@ export class Game {
     this.note = null;
     this.stageRecorded = false;
     // low: down in the gully or the ice cave. wantLow: she has chosen the gully at the cairn.
-    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: WARMTH.max, low: false, wantLow: false, fall: null, burial: null, stun: 0 };
+    this.ember = { x: L.spawn.x, y: groundY(L.spawn.x) - CHEST_HEIGHT, vx: 0, facing: 1, warmth: L.warmthCap || WARMTH.max, low: false, wantLow: false, fall: null, burial: null, stun: 0 };
     this.checkpoint = { ...L.spawn };
     this.objects = L.objects.map((o, i) => ({
       ...o,
@@ -79,7 +82,10 @@ export class Game {
       bounds: objectBounds(o),
     }));
     this.totalWanderers = this.objects.filter((o) => o.type === 'wanderer').length;
-    this.fire = { ...L.fire, reached: false };
+    // A hearth is cold until she lights it.
+    this.fire = { ...L.fire, reached: false, cold: !!L.fire.hearth };
+    setUpHomes(this, L);
+    this.endingT = 0;
     this.companions = this.companionsAtStageStart.map((home, i) => {
       const x = Math.max(30, L.spawn.x - 44 * (i + 1));
       return { x, y: groundY(x) - CHEST * COMPANION_SCALE, facing: 1, phase: Math.random() * 6, home, low: false, joinedAt: -99 };
@@ -166,6 +172,16 @@ export class Game {
     }
     if (input.pausePressed && this.mode === 'play') {
       this.mode = 'paused';
+      return;
+    }
+    if (this.mode === 'ending') {
+      this.endingT += dt;
+      // Once the last line is written, any key goes back to the title, where the walk is remembered.
+      if (this.endingT > ENDING_DONE && input.anyPressed) {
+        location.reload();
+        return;
+      }
+      this.simulate(dt, input);
       return;
     }
     if (input.wasPressed('KeyR')) {
@@ -270,6 +286,39 @@ export class Game {
     return this.companions.filter((c) => homes.includes(c.home)).length;
   }
 
+  // The hearth catches: the walk is over. Everyone with her gathers at the fire, the frost clears from the window,
+  // and the village is seen as it is now.
+  startEnding() {
+    this.fire.cold = false;
+    this.fire.reached = true;
+    this.intro = null;
+    this.titleFade = 0;
+    this.pulsing = false;
+    this.recordStage();
+    if (!this.finishRecorded) {
+      this.finishRecorded = true;
+      const before = this.saved.endings;
+      this.ending = saveFinish({ n: this.ledger.saved.length, all: this.totalVillagers() }, this.ledger.trees || 0);
+      this.endingNew = !before.includes(this.ending);
+      this.saved = loadSave();
+    }
+    this.checkpoint = { x: this.fire.x - 60, y: groundY(this.fire.x - 60) - 60 };
+    this.mode = 'ending';
+    this.endingT = 0;
+    this.audio.unlockLayer();
+    this.audio.chime();
+    this.audio.setRest(true);
+  }
+
+  // Every tree on the whole walk, and how many of them have been brought back: how green the end is.
+  totalTrees() {
+    return this.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'tree').length, 0);
+  }
+
+  treesRatio() {
+    return Math.min(1, (this.ledger.trees || 0) / Math.max(1, this.totalTrees()));
+  }
+
   // Everyone in the village who can be found on the whole walk.
   totalVillagers() {
     return this.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'wanderer' && o.home).length, 0);
@@ -349,6 +398,12 @@ export class Game {
   // 1 right on a beat, decaying toward 0 before the next one.
   beatEnvelope() {
     return Math.exp(-(this.beatTimer / this.beatInterval()) * 5);
+  }
+
+  // How warm her coal can still get. In the last stage it is failing; once the hearth is lit, it is whole again.
+  warmthCap() {
+    if (this.mode === 'ending') return WARMTH.max;
+    return this.level.warmthCap || WARMTH.max;
   }
 
   pulseRadius() {
@@ -470,6 +525,7 @@ export class Game {
     this.updateObjects(dt);
     if (e.low) this.wentLow = true;
     this.updateMissed();
+    updateHomes(this, dt);
     this.updateCompanions(dt);
     this.updateEffects(dt);
     this.updatePickups(dt);
@@ -516,9 +572,9 @@ export class Game {
     const w = this.wind;
     const e = this.ember;
     const zone = this.windZone(e.x);
-    w.k = zone ? zone.k : 0;
+    w.k = zone && this.mode !== 'ending' ? zone.k : 0;
     w.exposed = !!zone && !this.inShelter(e.x);
-    if (!zone && w.phase === 'calm') {
+    if ((!zone || this.mode === 'ending') && w.phase === 'calm') {
       w.strength = Math.max(0, w.strength - dt);
       return;
     }
@@ -685,8 +741,8 @@ export class Game {
       }
     }
 
-    const fd = Math.abs(e.x - this.fire.x);
-    this.audio.setFire(1 - fd / 1100);
+    const fd = this.fire.cold ? Infinity : Math.abs(e.x - this.fire.x);
+    this.audio.setFire(this.fire.cold ? 0 : 1 - fd / 1100);
     if (fd < WARMTH.fireRadius) {
       delta += WARMTH.fireHealPerSecond * (1 - fd / WARMTH.fireRadius);
       nearHeat = true;
@@ -723,7 +779,7 @@ export class Game {
     // A gust strips warmth away. Behind a rock it does not reach her.
     if (this.wind.exposed && this.wind.phase === 'gust') delta -= WIND.gustDrain * this.wind.k * this.wind.strength;
 
-    e.warmth = clamp(e.warmth + delta * dt, 0, WARMTH.max);
+    e.warmth = clamp(e.warmth + delta * dt, 0, this.warmthCap());
 
     // Flash the bar label the first time each warmth band is crossed.
     for (const th of [THRESHOLDS.frost, THRESHOLDS.blur, THRESHOLDS.heavy]) {
@@ -849,9 +905,13 @@ export class Game {
 
   onThawed(o) {
     o.thawedAt = this.time;
-    // A lit lantern, or someone she has freed, is where she wakes if her light goes out. Not down in the cave
+    if (o.type === 'hearth') {
+      this.startEnding();
+      return;
+    }
+    // A lit lantern, someone she has freed, or a tree marked for it is where she wakes if her light goes out. Not down in the cave
     // or under the snow, where waking would put her straight back in the hazard.
-    if ((o.type === 'lantern' || o.type === 'wanderer') && !o.low && !o.buried && o.x > this.checkpoint.x) {
+    if ((o.type === 'lantern' || o.type === 'wanderer' || o.checkpoint) && !o.low && !o.buried && o.x > this.checkpoint.x) {
       const cx = o.type === 'lantern' ? o.x + 16 : o.x;
       this.checkpoint = { x: cx, y: groundY(cx) - 60 };
       if (!this.toldCheckpoint) {
@@ -876,7 +936,11 @@ export class Game {
     const e = this.ember;
     // Companions walk a few steps behind.
     this.companions.forEach((c, i) => {
-      const tx = e.x - e.facing * 44 * (i + 1);
+      let tx = e.x - e.facing * 44 * (i + 1);
+      // Gone to their own door to light the window.
+      if (c.visit) tx = doorX(c.visit.home);
+      // At the end everyone gathers round the hearth, on both sides of the fire.
+      if (this.mode === 'ending') tx = this.fire.x + (i % 2 ? 1 : -1) * (70 + 40 * Math.floor(i / 2));
       const step = (tx - c.x) * Math.min(1, dt * 1.8);
       if (Math.abs(tx - c.x) > 6) c.facing = Math.sign(tx - c.x);
       else c.facing = e.facing;
@@ -949,7 +1013,7 @@ export class Game {
     for (const p of this.pickups) {
       if (Math.abs(e.x - p.x) < EMBERS.pickupRange && !!p.low === lowHere) {
         p.taken = true;
-        e.warmth = Math.min(WARMTH.max, e.warmth + EMBERS.warmth);
+        e.warmth = Math.min(this.warmthCap(), e.warmth + EMBERS.warmth);
         this.flare = 1;
         this.rings.push({ x: e.x, y: e.y, t: 0, r: 70, strong: false });
         this.audio.ember();
@@ -974,7 +1038,7 @@ export class Game {
 
   updateFire() {
     const e = this.ember;
-    if (this.fire.reached || this.lightsOut) return;
+    if (this.fire.reached || this.lightsOut || this.fire.cold) return;
     if (Math.abs(e.x - this.fire.x) < 110) {
       this.fire.reached = true;
       // The stage's opening title never lingers into its ending.
@@ -1024,7 +1088,7 @@ export class Game {
       e.stun = 0;
       e.y = groundY(e.x) - CHEST_HEIGHT;
       e.vx = 0;
-      e.warmth = WARMTH.max;
+      e.warmth = this.warmthCap();
       this.companions.forEach((c, i) => {
         c.x = Math.max(30, e.x - 44 * (i + 1));
         c.low = false;

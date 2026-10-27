@@ -1,7 +1,7 @@
 import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND, AVALANCHE, QUAKE, LAKE } from './config.js';
 import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
-import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION } from './game.js';
+import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION, ENDING_DONE } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE } from './village.js';
 import { rumbleSeconds, shaking } from './slopes.js';
@@ -51,6 +51,25 @@ const smooth01 = (v) => {
   const k = clamp01(v);
   return k * k * (3 - 2 * k);
 };
+// 0 before a, easing to 1 at b.
+const ease = (a, b, t) => smooth01((t - a) / (b - a));
+
+// The ending, by seconds since the hearth caught: the frost clears, dawn comes, the ground greens, the window frame
+// of her home closes in around the view, and the last lines are written.
+function endingLook(game) {
+  if (game.mode !== 'ending') return null;
+  const T = game.endingT;
+  return {
+    clear: ease(2, 8, T),
+    dawn: ease(3, 10, T),
+    grow: ease(4, 12, T) * game.treesRatio(),
+    frame: ease(9, 12, T),
+    line: clamp01((T - 12) / 3),
+    word: clamp01((T - 15.5) / 1.6),
+    after: ease(17.5, 18.5, T),
+    prompt: T > ENDING_DONE ? 0.55 + 0.35 * Math.sin(T * 2) : 0,
+  };
+}
 
 function rgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -402,7 +421,8 @@ export class Renderer {
     }
     c.drawImage(this.scene, 0, 0);
     c.filter = 'none';
-    c.globalAlpha = look.frostA;
+    const end = endingLook(game);
+    c.globalAlpha = look.frostA * (end ? 1 - end.clear : 1);
     c.drawImage(this.frost, 0, 0, VIEW.w, VIEW_H);
     c.globalAlpha = 1;
 
@@ -435,7 +455,7 @@ export class Renderer {
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (game.ember.burial || game.ember.unburied) this.drawBurial(c, game);
-    if (!(game.intro && game.intro.t < game.introLock())) this.drawBar(c, game);
+    if (!(game.intro && game.intro.t < game.introLock()) && game.mode !== 'ending') this.drawBar(c, game);
     if (game.intro && game.intro.kind !== 'walk' && game.titleFade > 0) this.drawTitleText(c, game);
     if (game.mode === 'paused') this.drawPause(c);
     if (game.mode === 'stageEnd') {
@@ -450,6 +470,7 @@ export class Renderer {
       this.drawStageEndText(c, game);
       c.restore();
     }
+    if (end) this.drawEnding(c, game, end);
     if (game.audio.muted) {
       c.font = `13px ${SERIF}`;
       c.fillStyle = 'rgba(200,215,230,0.55)';
@@ -475,7 +496,7 @@ export class Renderer {
     this.drawStageGround(s, cam, game, t);
     for (const o of game.objects) this.drawObject(s, o, t);
     this.drawPickups(s, game, t);
-    this.drawFire(s, game.fire, t);
+    if (!game.fire.cold) this.drawFire(s, game.fire, t);
     // The avalanche pours down behind the figures; anyone it reaches outside the overhang is buried.
     this.drawSlides(s, game, t);
     this.drawFigures(s, game, dt, t);
@@ -494,8 +515,133 @@ export class Renderer {
     this.drawWhiteout(s, game, t);
     s.restore();
     this.drawRain(s, game, t);
+    const end = endingLook(game);
+    if (end) this.drawDawn(s, end);
+    this.snowFade = end ? 1 - end.dawn * 0.85 : 1;
     this.drawSnow(s, cam, dt, t, game.wind.strength);
     this.drawNear(s, cam, !!game.level.lake);
+  }
+
+  // Dawn over the village at the end: the sky warms from the horizon up.
+  drawDawn(s, end) {
+    if (end.dawn <= 0.01) return;
+    const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.85);
+    g.addColorStop(0, `rgba(120,150,190,${0.12 * end.dawn})`);
+    g.addColorStop(0.6, `rgba(250,190,150,${0.28 * end.dawn})`);
+    g.addColorStop(1, `rgba(255,215,160,${0.4 * end.dawn})`);
+    s.fillStyle = g;
+    s.fillRect(0, 0, VIEW.w, VIEW_H);
+    s.save();
+    s.globalCompositeOperation = 'lighter';
+    glow(s, VIEW.w * 0.78, 470, 520, '255,190,120', 0.22 * end.dawn);
+    s.restore();
+  }
+
+  // The snow melting off the ground, and as much green coming back as trees were warmed on the walk.
+  drawSpring(s, game, x0, x1, t, end) {
+    const along = () => {
+      s.beginPath();
+      s.moveTo(x0, VIEW_H);
+      for (let x = x0; x <= x1; x += 10) s.lineTo(x, groundY(x) + 1);
+      s.lineTo(x1, VIEW_H);
+      s.closePath();
+    };
+    along();
+    s.fillStyle = `rgba(112,98,76,${0.3 * end.dawn})`;
+    s.fill();
+    const green = end.grow;
+    if (green <= 0.01) return;
+    along();
+    s.fillStyle = `rgba(92,124,66,${0.55 * green})`;
+    s.fill();
+    s.strokeStyle = `rgba(120,156,78,${0.9 * green})`;
+    s.lineWidth = 1.2;
+    s.beginPath();
+    for (let x = Math.floor(x0 / 6) * 6; x < x1; x += 6) {
+      if ((hash(211, x) + 1) / 2 > green) continue;
+      const h = (5 + (hash(213, x) + 1) * 5) * green;
+      const lean = hash(217, x) * 3 + Math.sin(t * 1.3 + x * 0.05) * 1.5;
+      s.moveTo(x, groundY(x) + 2);
+      s.lineTo(x + lean, groundY(x) - h);
+    }
+    s.stroke();
+    // Small cold-country flowers, as in the prologue, once the green is well in.
+    for (let x = Math.floor(x0 / 37) * 37; x < x1; x += 37) {
+      if ((hash(223, x) + 1) / 2 > green * 0.8) continue;
+      const gy = groundY(x) - 9 * green;
+      s.fillStyle = hash(227, x) > 0.3 ? '#f1cf62' : '#f4efe4';
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + x;
+        s.beginPath();
+        s.arc(x + Math.cos(a) * 2.4, gy + Math.sin(a) * 2.4, 1.8, 0, Math.PI * 2);
+        s.fill();
+      }
+    }
+  }
+
+  // The end: the frosted glass the whole walk was seen through was the window of her own home. Its frame closes in
+  // around the view, her pot sits on the sill, and the last lines are written.
+  drawEnding(c, game, end) {
+    const f = end.frame;
+    if (f > 0) {
+      const b = 62 * f;
+      const m = 13 * f;
+      const hy = VIEW_H * 0.44;
+      c.fillStyle = '#17100c';
+      c.fillRect(0, 0, VIEW.w, b);
+      c.fillRect(0, VIEW_H - b, VIEW.w, b);
+      c.fillRect(0, 0, b, VIEW_H);
+      c.fillRect(VIEW.w - b, 0, b, VIEW_H);
+      c.fillStyle = '#3a281c';
+      c.fillRect(VIEW.w / 2 - m / 2, b, m, VIEW_H - 2 * b);
+      c.fillRect(b, hy - m / 2, VIEW.w - 2 * b, m);
+      c.strokeStyle = '#4a3424';
+      c.lineWidth = 9 * f;
+      c.strokeRect(b, b, VIEW.w - 2 * b, VIEW_H - 2 * b);
+      // The sill, and her clay pot on it with the coal still glowing.
+      c.fillStyle = '#4e3828';
+      c.fillRect(b - 14 * f, VIEW_H - b, VIEW.w - 2 * b + 28 * f, 12 * f);
+      const px = VIEW.w / 2 + 250;
+      const py = VIEW_H - b;
+      c.globalAlpha = f;
+      c.fillStyle = '#8a5a3a';
+      c.beginPath();
+      c.moveTo(px - 16, py - 26);
+      c.quadraticCurveTo(px - 22, py - 6, px - 12, py);
+      c.lineTo(px + 12, py);
+      c.quadraticCurveTo(px + 22, py - 6, px + 16, py - 26);
+      c.closePath();
+      c.fill();
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      glow(c, px, py - 28, 46, '255,170,90', 0.45 + 0.08 * Math.sin(game.time * 3));
+      c.restore();
+      c.globalAlpha = 1;
+    }
+    c.textAlign = 'center';
+    c.shadowColor = 'rgba(20,12,8,0.6)';
+    c.shadowBlur = 8;
+    c.fillStyle = 'rgba(255,240,218,0.96)';
+    const lines = game.level.endingLines || {};
+    c.font = `58px ${HAND}`;
+    this.writeReveal(c, (lines[game.ending] || '').toLowerCase(), VIEW.w / 2, 140, end.line);
+    c.font = `150px ${HAND}`;
+    this.writeReveal(c, 'thaw', VIEW.w / 2, 268, end.word);
+    c.shadowBlur = 0;
+    if (end.after > 0) {
+      const sv = game.saved;
+      const brought = `${game.ledger.saved.length} of ${game.totalVillagers()} brought home   ·   trees warmed: ${game.ledger.trees || 0} of ${game.totalTrees()}`;
+      const found = `endings found: ${sv.endings.length} of ${ENDINGS.length}`;
+      c.font = `italic 300 16px ${SERIF}`;
+      c.fillStyle = `rgba(255,236,210,${0.9 * end.after})`;
+      c.fillText(brought, VIEW.w / 2, 352);
+      c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 378);
+    }
+    if (end.prompt > 0) {
+      c.font = `300 14px ${SERIF}`;
+      c.fillStyle = `rgba(220,200,180,${end.prompt})`;
+      c.fillText('press any key', VIEW.w / 2, VIEW_H - 24);
+    }
   }
 
   drawSky(s, cam, t, lift = 0) {
@@ -812,28 +958,31 @@ export class Renderer {
   drawCliffs(s, game, t) {
     for (const q of game.quakes || []) {
       if (q.x1 < game.camX - 200 || q.x0 > game.camX + VIEW.w + 200) continue;
-      const ledge = (x) => groundY(x) - 178;
-      // An overhanging cliff: rock rising off the top of the screen, its underside over the path.
-      const a0 = q.x0 - 140;
-      const a1 = q.x1 + 140;
-      const g = s.createLinearGradient(0, -40, 0, 440);
-      g.addColorStop(0, '#2c3d48');
-      g.addColorStop(1, '#1a2730');
-      s.fillStyle = g;
-      s.beginPath();
-      s.moveTo(a0 - 60, -40);
-      s.quadraticCurveTo(a0 - 30, ledge(a0) - 120, a0, ledge(a0) - 30);
-      for (let x = a0; x <= a1; x += 20) s.lineTo(x, ledge(x) - 4 + hash(109, x) * 6);
-      s.quadraticCurveTo(a1 + 40, ledge(a1) - 140, a1 + 90, -40);
-      s.closePath();
-      s.fill();
-      // Strata in the rock, and snow caught on its ledges.
-      s.strokeStyle = 'rgba(120,150,165,0.18)';
-      s.lineWidth = 2;
-      for (let i = 1; i <= 4; i++) {
+      // On the mountain the icicles hang from a cliff; in the street, from the eaves of the homes.
+      const ledge = q.eaves ? (x) => groundY(x) - 74 : (x) => groundY(x) - 178;
+      if (!q.eaves) {
+        // An overhanging cliff: rock rising off the top of the screen, its underside over the path.
+        const a0 = q.x0 - 140;
+        const a1 = q.x1 + 140;
+        const g = s.createLinearGradient(0, -40, 0, 440);
+        g.addColorStop(0, '#2c3d48');
+        g.addColorStop(1, '#1a2730');
+        s.fillStyle = g;
         s.beginPath();
-        for (let x = a0 + 20 * i; x <= a1 - 20 * i; x += 30) (x === a0 + 20 * i ? s.moveTo : s.lineTo).call(s, x, ledge(x) - 40 * i + hash(113, x + i) * 8);
-        s.stroke();
+        s.moveTo(a0 - 60, -40);
+        s.quadraticCurveTo(a0 - 30, ledge(a0) - 120, a0, ledge(a0) - 30);
+        for (let x = a0; x <= a1; x += 20) s.lineTo(x, ledge(x) - 4 + hash(109, x) * 6);
+        s.quadraticCurveTo(a1 + 40, ledge(a1) - 140, a1 + 90, -40);
+        s.closePath();
+        s.fill();
+        // Strata in the rock, and snow caught on its ledges.
+        s.strokeStyle = 'rgba(120,150,165,0.18)';
+        s.lineWidth = 2;
+        for (let i = 1; i <= 4; i++) {
+          s.beginPath();
+          for (let x = a0 + 20 * i; x <= a1 - 20 * i; x += 30) (x === a0 + 20 * i ? s.moveTo : s.lineTo).call(s, x, ledge(x) - 40 * i + hash(113, x + i) * 8);
+          s.stroke();
+        }
       }
 
       for (const ic of q.icicles) {
@@ -1121,6 +1270,12 @@ export class Renderer {
     if (L.cairn) this.drawCairn(s, L.cairn.x, t, game.wind.strength);
     if (L.camp) this.drawCamp(s, L.camp.x, t);
     if (L.lake) this.drawIce(s, game, x0, x1, t);
+    const end = endingLook(game);
+    if (end) this.drawSpring(s, game, x0, x1, t, end);
+    for (const h of game.homes || []) {
+      if (h.x + h.w < x0 || h.x - h.w > x1) continue;
+      this.drawHouse(s, h, h.lit, 1 - 0.45 * h.lit, t, game.wind.strength);
+    }
   }
 
   // The cave under the ridge: the space between the ridge's underside and the gully floor.
@@ -1385,6 +1540,42 @@ export class Renderer {
     if (o.type === 'tree') this.drawPine(s, o.x, floorY(o.x, o.low) + 6, 175, o.seed, warm);
     else if (o.type === 'lantern') this.drawLantern(s, o, warm, t);
     else if (o.type === 'wanderer') this.drawWanderer(s, o, warm, t);
+    else if (o.type === 'hearth') this.drawHearth(s, o, warm, t);
+  }
+
+  // The village hearth: the ring of stones from the prologue, crusted with ice. Each pulse leaves the stones
+  // glowing a little more; as it catches, the fire grows out of them.
+  drawHearth(s, o, warm, t) {
+    const hb = groundY(o.x) + 4;
+    for (let k = -3; k <= 3; k++) {
+      s.fillStyle = mix('#7d909b', '#5b5047', warm);
+      s.beginPath();
+      s.ellipse(o.x + k * 11, hb - 2 + Math.abs(k) * 0.6, 6.5, 4.5, 0, 0, Math.PI * 2);
+      s.fill();
+    }
+    // Ice over the stones and the dead ashes, thinning as it is warmed.
+    const ice = o.state === 'frozen' ? 1 - 0.7 * (o.progress / o.pulses) : 1 - warm;
+    if (ice > 0.02) {
+      s.fillStyle = `rgba(220,236,244,${0.75 * ice})`;
+      s.beginPath();
+      s.ellipse(o.x, hb - 6, 44, 9 + 4 * ice, 0, Math.PI, 0);
+      s.fill();
+    }
+    const heat = o.state === 'frozen' ? o.progress / o.pulses : 1;
+    if (heat > 0) {
+      s.save();
+      s.globalCompositeOperation = 'lighter';
+      glow(s, o.x, hb - 6, 30 + 40 * heat, '255,140,60', 0.15 + 0.3 * heat);
+      s.restore();
+    }
+    if (o.state === 'melting') {
+      s.save();
+      s.translate(o.x, hb);
+      s.scale(o.meltT, o.meltT);
+      s.translate(-o.x, -hb);
+      this.drawFire(s, { x: o.x }, t);
+      s.restore();
+    }
   }
 
   // What the cold took at a fork sinks into the snow and is gone, leaving only a low drift.
@@ -1593,8 +1784,14 @@ export class Renderer {
     s.globalCompositeOperation = 'lighter';
     const f = game.fire;
     const fb = groundY(f.x) - 30;
-    glow(s, f.x, fb, 340 * (1 + 0.04 * Math.sin(t * 7)), '255,150,60', 0.3);
-    glow(s, f.x, fb, 120, '255,200,120', 0.35);
+    if (!f.cold) {
+      glow(s, f.x, fb, 340 * (1 + 0.04 * Math.sin(t * 7)), '255,150,60', 0.3);
+      glow(s, f.x, fb, 120, '255,200,120', 0.35);
+    }
+    // Lit windows in the street.
+    for (const h of game.homes || []) {
+      if (h.lit > 0) glow(s, h.x + h.w * 0.19, groundY(h.x) - h.h * 0.4, 80, '255,190,110', 0.34 * h.lit);
+    }
     for (const o of game.objects) {
       const b = o.bounds;
       if (o.state === 'melting') glow(s, b.cx, b.cy, 60 + 60 * o.meltT, '240,170,80', 0.2 * o.meltT);
@@ -1707,7 +1904,7 @@ export class Renderer {
       f.x += (f.vx - 900 * ws * f.par + Math.sin(t + f.ph) * 8) * dt;
       if (f.y > VIEW_H) f.y -= VIEW_H;
       const x = (((f.x - cam * f.par) % VIEW.w) + VIEW.w) % VIEW.w;
-      s.fillStyle = `rgba(225,238,248,${0.22 * f.s * (1 + ws)})`;
+      s.fillStyle = `rgba(225,238,248,${0.22 * f.s * (1 + ws) * (this.snowFade ?? 1)})`;
       if (ws > 0.12) s.fillRect(x, f.y, f.s + 40 * ws * f.par, Math.max(0.8, f.s * 0.6));
       else s.fillRect(x, f.y, f.s, f.s);
     }
@@ -2111,6 +2308,14 @@ export class Renderer {
       roundRect(c, x, y, bw * (w / 100), bh, 2.5);
       c.fill();
       c.restore();
+    }
+    // A failing coal: the part of the bar it can no longer reach is shut off.
+    const cap = game.warmthCap();
+    if (cap < 100) {
+      c.fillStyle = 'rgba(10,20,26,0.55)';
+      c.fillRect(x + bw * (cap / 100), y - 1, bw * (1 - cap / 100), bh + 2);
+      c.fillStyle = 'rgba(235,246,255,0.5)';
+      c.fillRect(x + bw * (cap / 100) - 1, y - 3, 2, bh + 6);
     }
     if (game.barFlash > 0 || low) {
       const a = low ? 0.8 : Math.min(1, game.barFlash);

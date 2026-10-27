@@ -129,3 +129,10 @@ export const LAKE = {
   chill: 0.2, // the open lake at night: extra warmth lost per second anywhere on the ice
   stormThaw: 0.6, // pulses thaw this much in the freezing rain
 };
+
+// The last stage's street: how close she passes for a villager to go home, and how long they take to light the window.
+export const HOME = {
+  reach: 130,
+  lightSeconds: 1.4,
+  linger: 0.6,
+};
