@@ -122,7 +122,7 @@ export const LAKE = {
   fallWarmth: 25, // the freezing water takes this much warmth
   climbBack: 70, // she climbs out this far back, on the side she came from
   climbStun: 1.2,
-  openFor: 9, // seconds the broken ice stays open before it skins over again
+  openFor: 6, // seconds the broken ice stays open before it skins over again
   whiteoutRise: 2.5, // seconds for the whiteout to close in
   stormSlip: 1.3, // her stopping grip on the storm's glazed ice (normal ground is 4.5)
   stormDrain: 0.4,

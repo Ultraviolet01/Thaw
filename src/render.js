@@ -1,4 +1,4 @@
-import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND, AVALANCHE, QUAKE } from './config.js';
+import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND, AVALANCHE, QUAKE, LAKE } from './config.js';
 import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION } from './game.js';
@@ -482,13 +482,19 @@ export class Renderer {
     this.drawCliffs(s, game, t);
     this.drawCaveDark(s, game, t);
     this.drawLakeDark(s, game, t);
+    // On the dark lake a lucky ember and the far fire still show as themselves, not as a muddy haze.
+    if (game.level.dark) {
+      this.drawPickups(s, game, t);
+      // Close by, her own light already shows it; drawn twice it would burn too bright.
+      if (Math.abs(game.fire.x - game.ember.x) > 200) this.drawFire(s, game.fire, t);
+    }
     this.drawLights(s, game, t);
     this.drawMist(s, t);
     this.drawWhiteout(s, game, t);
     s.restore();
     this.drawRain(s, game, t);
     this.drawSnow(s, cam, dt, t, game.wind.strength);
-    this.drawNear(s, cam);
+    this.drawNear(s, cam, !!game.level.lake);
   }
 
   drawSky(s, cam, t, lift = 0) {
@@ -999,6 +1005,14 @@ export class Renderer {
         for (let i = 0; i < 6; i++) {
           const sx = p.x0 + 10 + ((hash(167, i + p.x0) + 1) / 2) * (p.x1 - p.x0 - 20);
           s.fillRect(sx + Math.sin(t * 2 + i) * 2, gy + 3 + (i % 3), 8 + (i % 3) * 3, 2);
+        }
+        // Over its last seconds the water skins over with new ice, closing in from the edges.
+        const skin = clamp01((p.t - (LAKE.openFor - 2.5)) / 2.5);
+        if (skin > 0) {
+          s.fillStyle = `rgba(70,96,110,${0.85 * skin})`;
+          s.beginPath();
+          s.ellipse((p.x0 + p.x1) / 2, gy + 6, (p.x1 - p.x0) / 2, 9, 0, 0, Math.PI * 2);
+          s.fill();
         }
         continue;
       }
@@ -1708,11 +1722,13 @@ export class Renderer {
     }
   }
 
-  drawNear(s, cam) {
+  drawNear(s, cam, open = false) {
     s.strokeStyle = '#151f26';
     for (const n of this.near) {
       const x = n.x - cam * 1.35;
       if (x < -300 || x > VIEW.w + 300) continue;
+      // Out on the open lake nothing grows; only the drifts are left.
+      if (open && n.kind !== 'drift') continue;
       if (n.kind === 'drift') {
         s.fillStyle = C.near;
         s.beginPath();
@@ -1860,22 +1876,28 @@ export class Renderer {
     let nearest = null;
     // When a companion's fire goes out, that is what the frost says, for a few seconds.
     const note = game.note && game.time - game.note.t < 6 ? game.note : null;
-    if (note) {
-      const age = game.time - note.t;
-      tm.globalAlpha = 0.9 * Math.min(1, age / 0.8) * Math.min(1, (6 - age) / 1);
-      tm.fillText(note.text, note.x, 175);
-    }
     for (const h of game.level.hints) {
       if (note) break;
       if (live(h) && Math.abs(e.x - h.x) < 420 && (!nearest || Math.abs(e.x - h.x) < Math.abs(e.x - nearest.x))) nearest = h;
     }
+    // A note clears the hint away quickly, and is only written once the hint has gone, so the two never overlap.
+    let shown = 0;
     game.level.hints.forEach((h, i) => {
       const target = (game.intro && game.titleFade > 0.05) || h !== nearest ? 0 : clamp01(1 - Math.abs(e.x - h.x) / 420);
-      this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * 2);
+      this.hintAlpha[i] += (target - this.hintAlpha[i]) * Math.min(1, dt * (note ? 8 : 2));
       if (this.hintAlpha[i] < 0.01) return;
+      shown = Math.max(shown, this.hintAlpha[i]);
       tm.globalAlpha = 0.9 * this.hintAlpha[i];
       tm.fillText(h.text, h.x, 175);
     });
+    if (note) {
+      const age = game.time - note.t;
+      const a = 0.9 * Math.min(1, age / 0.8) * Math.min(1, (6 - age) / 1) * clamp01(1 - shown * 4);
+      if (a > 0.01) {
+        tm.globalAlpha = a;
+        tm.fillText(note.text, note.x, 175);
+      }
+    }
     tm.restore();
 
     // Title and closing line, in screen space.
@@ -2666,6 +2688,7 @@ export class Renderer {
     c.font = `300 14px ${SERIF}`;
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
     const on = game.hasNextStage() ? 'space to walk on' : 'space to keep wandering';
-    c.fillText(`${on}   ·   R to replay this stage   ·   enter to start over from the beginning`, VIEW.w / 2, 520);
+    // Along the bottom, clear of the group standing at the fire.
+    c.fillText(`${on}   ·   R to replay this stage   ·   enter to start over from the beginning`, VIEW.w / 2, VIEW_H - 34);
   }
 }

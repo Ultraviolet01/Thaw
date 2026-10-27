@@ -39,8 +39,14 @@ export function updateLake(g, dt) {
   if (g.lightsOut || e.stun > 0) return;
   const p = thinUnder(g, e.x);
   if (!p) return;
+  // Open water: she stops at the edge and waits for it to skin over, rather than going straight back in.
   if (p.state === 'open') {
-    fallIn(g, p);
+    e.x = e.x - p.x0 < p.x1 - e.x ? p.x0 - 1 : p.x1 + 1;
+    e.vx = 0;
+    if (!g.hintFlags.toldOpen) {
+      g.hintFlags.toldOpen = true;
+      g.say('open water. wait for it to freeze over', e.x);
+    }
     return;
   }
   if (Math.abs(e.vx) < LAKE.thinSlow) p.stand += dt;
