@@ -425,6 +425,7 @@ export class Renderer {
     c.globalAlpha = look.frostA * (end ? 1 - end.clear : 1);
     c.drawImage(this.frost, 0, 0, VIEW.w, VIEW_H);
     c.globalAlpha = 1;
+    this.drawDawnOnGlass(c, game);
 
     c.save();
     c.translate(-game.camX, 0);
@@ -520,6 +521,20 @@ export class Renderer {
     this.snowFade = end ? 1 - end.dawn * 0.85 : 1;
     this.drawSnow(s, cam, dt, t, game.wind.strength);
     this.drawNear(s, cam, !!game.level.lake);
+  }
+
+  // The dawn on the frosted glass itself: the frost is drawn from the scene with its colour drained, so the sky's
+  // warmth would not show through it. A warm cast low in the sky, ahead of her, stronger with every stage.
+  drawDawnOnGlass(c, game) {
+    const dawn = game.level.dawn || 0;
+    if (dawn <= 0 || game.mode === 'ending') return;
+    const g = c.createLinearGradient(0, 120, 0, 600);
+    g.addColorStop(0, 'rgba(240,150,105,0)');
+    g.addColorStop(0.75, `rgba(240,150,105,${0.42 * dawn})`);
+    g.addColorStop(1, 'rgba(240,150,105,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    glow(c, VIEW.w * 0.92, 480, 600, '245,165,110', 0.3 * dawn);
   }
 
   // Dawn over the village at the end: the sky warms from the horizon up.
@@ -650,9 +665,24 @@ export class Renderer {
     g.addColorStop(1, C.skyBottom);
     s.fillStyle = g;
     s.fillRect(0, 0, VIEW.w, VIEW_H);
+    // The night turning toward dawn over the walk: warmth low in the sky ahead of her, the way she is going,
+    // a little more with every stage. The stars fade as it grows.
+    const dawn = (this.levelRef && this.levelRef.dawn) || 0;
+    if (dawn > 0) {
+      const h = s.createLinearGradient(0, VIEW_H * 0.2, 0, VIEW_H * 0.75);
+      h.addColorStop(0, 'rgba(210,150,130,0)');
+      h.addColorStop(0.7, `rgba(214,156,128,${0.16 * dawn})`);
+      h.addColorStop(1, `rgba(236,176,128,${0.34 * dawn})`);
+      s.fillStyle = h;
+      s.fillRect(0, 0, VIEW.w, VIEW_H);
+      s.save();
+      s.globalCompositeOperation = 'lighter';
+      glow(s, VIEW.w * 0.88, VIEW_H * 0.62, 620, '230,160,110', 0.16 * dawn);
+      s.restore();
+    }
     for (const st of this.stars) {
       const x = (((st.x - cam * 0.04) % VIEW.w) + VIEW.w) % VIEW.w;
-      const a = st.a * (0.6 + 0.4 * Math.sin(t * st.tw + st.x));
+      const a = st.a * (0.6 + 0.4 * Math.sin(t * st.tw + st.x)) * (1 - 0.8 * dawn);
       s.fillStyle = `rgba(215,232,245,${a})`;
       s.fillRect(x, st.y, st.s, st.s);
     }
@@ -2451,40 +2481,89 @@ export class Renderer {
     c.fillStyle = '#000';
     c.fillRect(0, 0, this.canvas.width, this.canvas.height);
     c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, VIEW.w, VIEW_H);
+    c.clip();
+    // The title is the frosted glass itself, close up: the night hills faint behind it, and the warmth of her coal
+    // rising from below, melting a little patch in time with her heart. The window it belongs to is kept for the end.
+    const sky = c.createLinearGradient(0, 0, 0, VIEW_H);
+    sky.addColorStop(0, '#1c2a31');
+    sky.addColorStop(1, '#3d5260');
+    c.fillStyle = sky;
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    [['#2c3e49', 430, 90, 0.0031], ['#34495a', 500, 60, 0.0047], ['#3f5666', 575, 36, 0.0068]].forEach(([col, base, amp, f], i) => {
+      c.fillStyle = col;
+      c.beginPath();
+      c.moveTo(0, VIEW_H);
+      for (let x = 0; x <= VIEW.w + 12; x += 12) c.lineTo(x, base - Math.abs(Math.sin(x * f + i * 1.7)) * amp);
+      c.lineTo(VIEW.w, VIEW_H);
+      c.closePath();
+      c.fill();
+    });
+    c.fillStyle = 'rgba(178,202,214,0.66)';
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    c.globalAlpha = 0.9;
+    for (let x = 0; x < VIEW.w; x += TILE_W) c.drawImage(this.crystals, x, 0);
+    c.globalAlpha = 1;
+    const beat = Math.exp(-((t % 1) * 5));
+    const px = VIEW.w * 0.62;
+    // Her coal's light comes up through the frost, warm and soft; just above it the glass has melted clear.
+    glow(c, px, VIEW_H + 40, 330 + 20 * beat, '255,186,120', 0.34 + 0.08 * beat);
+    const melt = c.createRadialGradient(px, VIEW_H + 20, 10, px, VIEW_H + 20, 120 + 10 * beat);
+    melt.addColorStop(0, 'rgba(40,46,48,0.55)');
+    melt.addColorStop(1, 'rgba(40,46,48,0)');
+    c.fillStyle = melt;
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    glow(c, px, VIEW_H + 10, 70 + 8 * beat, '255,170,90', 0.35 + 0.15 * beat);
+    c.restore();
+
+    // Written into the frost, as every line in the game is.
     c.textAlign = 'center';
+    const cx = VIEW.w / 2;
+    c.font = `150px ${HAND}`;
+    c.fillStyle = 'rgba(22,40,50,0.82)';
+    this.writeReveal(c, 'thaw', cx, 232, clamp01((t - 0.6) / 1.6));
     const sv = game.saved;
     const cur = sv.current && game.levels[sv.current.stage];
-    const cx = VIEW.w / 2;
-    const cy = VIEW_H / 2 - (sv.reached > 0 ? 40 : 0);
-    c.font = `300 17px ${SERIF}`;
-    c.fillStyle = `rgba(214,226,234,${clamp01(t / 1.5) * (0.55 + 0.35 * Math.sin(t * 2))})`;
+    const fade = clamp01((t - 1.6) / 1.2);
+    const cy = 340;
+    c.font = `300 18px ${SERIF}`;
+    c.fillStyle = `rgba(22,40,50,${fade * (0.6 + 0.3 * Math.sin(t * 2))})`;
     c.fillText(cur ? 'press any key to continue' : 'press any key to begin', cx, cy);
-    const fade = clamp01((t - 0.8) / 1.5);
     c.font = `italic 300 15px ${SERIF}`;
-    c.fillStyle = `rgba(190,206,216,${0.75 * fade})`;
+    c.fillStyle = `rgba(22,40,50,${0.8 * fade})`;
     if (cur) {
       c.fillText(`stage ${sv.current.stage + 1}, ${cur.name.toLowerCase()}`, cx, cy + 28);
-      c.fillText('N for a new walk, from the beginning', cx, cy + 56);
+      c.fillText('N for a new walk, from the beginning', cx, cy + 54);
     }
     // Any stage reached before can be walked again, as things stood when it began.
     if (sv.reached > 0) {
       const names = game.levels.slice(0, sv.reached + 1).map((L, i) => `${i + 1}  ${L.name.toLowerCase()}`);
       c.font = `300 14px ${SERIF}`;
-      c.fillStyle = `rgba(160,178,190,${0.7 * fade})`;
-      c.fillText('or press the number of a stage:', cx, cy + 104);
-      c.fillText(names.join('      '), cx, cy + 128);
+      c.fillStyle = `rgba(22,40,50,${0.72 * fade})`;
+      c.fillText('or press the number of a stage:', cx, cy + 100);
+      c.fillText(names.join('      '), cx, cy + 122);
     }
     // The record of finished walks: the best one, and how many of the endings have been seen.
     if (sv.finished > 0 && sv.best) {
       const trees = game.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'tree').length, 0);
       c.font = `italic 300 14px ${SERIF}`;
-      c.fillStyle = `rgba(214,190,150,${0.75 * fade})`;
-      c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 176);
-      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}`, cx, cy + 200);
+      c.fillStyle = `rgba(92,52,22,${0.85 * fade})`;
+      c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 166);
+      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}`, cx, cy + 188);
     }
     c.font = `italic 300 14px ${SERIF}`;
-    c.fillStyle = `rgba(160,178,190,${0.6 * fade})`;
-    c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 40);
+    c.fillStyle = `rgba(22,40,50,${0.6 * fade})`;
+    c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 30);
+    c.restore();
+    // Out of black.
+    if (t < 1.5) {
+      c.fillStyle = `rgba(0,0,0,${1 - t / 1.5})`;
+      c.fillRect(0, 0, VIEW.w, VIEW_H);
+    }
   }
 
   // The prologue: the world before the cold, then the cold, drawn with the same pieces as the game.

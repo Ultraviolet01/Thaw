@@ -24,6 +24,8 @@ export const level3 = {
   name: 'The Slopes',
   width: 8000,
   spawn: { x: 180, y: 470 },
+  // How far the night has turned toward dawn: a little more warmth low in the sky with every stage.
+  dawn: 0.25,
   ground,
   // The far hills sink as she climbs, so the height can be felt.
   altitude: true,

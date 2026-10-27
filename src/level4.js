@@ -14,6 +14,8 @@ export const level4 = {
   name: 'The Lake',
   width: 8300,
   spawn: { x: 180, y: 470 },
+  // How far the night has turned toward dawn: a little more warmth low in the sky with every stage.
+  dawn: 0.32,
   ground,
   // The darkest stage: only her coal, her companions' pots and lucky embers light it.
   dark: true,

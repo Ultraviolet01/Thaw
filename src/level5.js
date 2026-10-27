@@ -41,6 +41,8 @@ export const level5 = {
   name: 'Home',
   width: 10300,
   spawn: { x: 180, y: 470 },
+  // How far the night has turned toward dawn: a little more warmth low in the sky with every stage.
+  dawn: 0.5,
   ground,
   altitude: true,
   camp: { x: 70 },

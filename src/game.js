@@ -307,7 +307,7 @@ export class Game {
     this.endingT = 0;
     this.audio.unlockLayer();
     this.audio.chime();
-    this.audio.setRest(true);
+    this.audio.playEndingTheme();
   }
 
   // Every tree on the whole walk, and how many of them have been brought back: how green the end is.

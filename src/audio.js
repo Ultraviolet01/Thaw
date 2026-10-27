@@ -328,6 +328,32 @@ export class GameAudio {
     this.theme = el;
   }
 
+  // The ending: the jam's theme comes back from the top, as it opened the game, and takes over from the stage music.
+  // If it cannot play, the rest music plays instead.
+  playEndingTheme() {
+    this.resting = true;
+    this.stageMusic.set(0);
+    this.coldMusic.set(0);
+    this.restMusic.set(0);
+    if (this.theme) this.theme.pause();
+    this.themeEnded = false;
+    this.themeFailed = false;
+    const el = new Audio(THEME_SRC);
+    el.volume = 0;
+    el.muted = this.muted;
+    const fallback = () => { this.themeFailed = true; this.restMusic.set(0.5); };
+    el.addEventListener('error', fallback);
+    el.addEventListener('ended', () => { this.themeEnded = true; });
+    el.play().catch(fallback);
+    this.theme = el;
+    const rise = () => {
+      if (this.theme !== el) return;
+      el.volume = Math.min(0.85, el.volume + 0.04);
+      if (el.volume < 0.85) setTimeout(rise, 50);
+    };
+    rise();
+  }
+
   themePlaying() {
     return !!this.theme && !this.themeFailed && !this.themeEnded;
   }
