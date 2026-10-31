@@ -21,7 +21,8 @@ Walk her home through five stages of a frozen world: a still, dark plain, a wind
 
 - **One verb:** pulse warmth in time with her heartbeat.
 - **Choices that stay with you:** warm the light or the one beside it, the ridge or the cave, dig someone out or keep moving. Who you bring home lights a window in the village at the end.
-- **Four endings,** greener the more of the world you thaw.
+- **Four endings, and a secret one,** greener the more of the world you thaw.
+- **The more care you show, the easier the walk:** every villager you free strengthens your pulse, and every tree you warm keeps you warm.
 - **About 12 minutes,** including a one-minute prologue set to the jam's theme.
 - Your walk is saved in the browser. Pick any stage you have reached from the title.
 
@@ -34,6 +35,7 @@ Walk her home through five stages of a frozen world: a still, dark plain, a wind
 - **Mute:** M
 - **Volume:** - and +
 - **Screen shake:** X
+- **A gentle or a hard walk:** H, on the title or the pause screen. On a gentle walk, if her light goes out the last one to join her freezes where she fell. On a hard walk, the stage begins again. The endings are the same either way.
 - **Full screen:** F
 - **Touch:** hold the left or right of the screen to walk, the middle to pulse, swipe down for the low way. Hold your phone sideways.
 

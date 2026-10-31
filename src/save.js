@@ -50,8 +50,10 @@ export function saveStageStart(stage, ledger, companions) {
 }
 
 // The last fire is reached: the walk is over. Record how it went; there is nothing left to continue.
-export function saveFinish(savedCount, trees) {
+// whole: everyone brought home and every tree warmed, the secret ending.
+export function saveFinish(savedCount, trees, whole = false) {
   const d = loadSave();
+  if (whole) d.secret = true;
   const all = savedCount.all;
   const ending = endingOf(savedCount.n, all);
   d.current = null;
@@ -63,14 +65,14 @@ export function saveFinish(savedCount, trees) {
   return ending;
 }
 
-// The player's settings, kept apart from the walk: volume and screen shake.
+// The player's settings, kept apart from the walk: volume, screen shake, and a gentle or hard walk.
 const SETTINGS = 'thaw.settings.v1';
 
 export function loadSettings() {
   try {
-    return { volume: 1, shake: true, ...JSON.parse(localStorage.getItem(SETTINGS) || '{}') };
+    return { volume: 1, shake: true, hard: false, ...JSON.parse(localStorage.getItem(SETTINGS) || '{}') };
   } catch (e) {
-    return { volume: 1, shake: true };
+    return { volume: 1, shake: true, hard: false };
   }
 }
 

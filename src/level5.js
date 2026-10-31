@@ -75,14 +75,15 @@ export const level5 = {
   quakes: [
     { x0: 4250, x1: 4900, icicles: [4330, 4460, 4590, 4720, 4850], every: [5, 8] },
     // In the street the icicles hang from the eaves of the homes. The doors and the gaps between homes are clear.
-    { x0: 7200, x1: 9080, eaves: true, icicles: HOMES.flatMap((h) => [h.x - h.w / 2 - 6, h.x + h.w / 2 + 6]), every: [6, 9] },
+    // The first two homes are left quiet: a breath of calm as she comes into the village, before the storm.
+    { x0: 7740, x1: 9080, eaves: true, icicles: HOMES.slice(2).flatMap((h) => [h.x - h.w / 2 - 6, h.x + h.w / 2 + 6]), every: [6, 9] },
   ],
   // The millpond: thin ice under a whiteout.
   lake: POND,
   thinIce: [[5780, 5900], [6000, 6130], [6230, 6330], [6450, 6590], [6700, 6800]],
   whiteouts: [{ x0: 5900, x1: 6650 }],
   // An ice storm over the street.
-  storms: [{ x0: 7100, x1: 9100 }],
+  storms: [{ x0: 7650, x1: 9100 }],
   mist: [],
   // The hearth is the stage's fire, but it is cold until she lights it.
   fire: { x: 9640, hearth: true },
@@ -102,6 +103,8 @@ export const level5 = {
     most: 'most of the windows are lit again',
     few: 'a few windows are lit. it is enough to begin',
     alone: 'one fire, and one window. it is a start',
+    // The secret ending: everyone home, every tree warmed. It answers the prologue's first line.
+    whole: 'every window, every tree. the village shares one fire again',
   },
   closingLine: 'Home.',
 };

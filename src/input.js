@@ -1,4 +1,5 @@
 const BLOCKED = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const SETTING_KEYS = new Set(['KeyH', 'KeyX', 'KeyM', 'KeyF', 'Minus', 'Equal', 'NumpadSubtract', 'NumpadAdd']);
 
 // Keyboard plus the first connected gamepad. Call poll() at the start of a frame and endFrame() at the end.
 export class Input {
@@ -104,7 +105,9 @@ export class Input {
     return this.wasPressed('Escape') || this.wasPressed('KeyP') || (this.pad.start && !this.prevPad.start);
   }
 
+  // Any key that means "go on", not one that changes a setting (volume, shake, the walk, mute, full screen).
   get anyPressed() {
-    return this.pressed.size > 0 || (this.pad.any && !this.prevPad.any);
+    for (const k of this.pressed) if (!SETTING_KEYS.has(k)) return true;
+    return this.pad.any && !this.prevPad.any;
   }
 }

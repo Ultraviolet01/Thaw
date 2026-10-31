@@ -3,7 +3,7 @@ import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
 import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION, ENDING_DONE } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
-import { VILLAGE } from './village.js';
+import { VILLAGE, villager } from './village.js';
 import { rumbleSeconds, shaking } from './slopes.js';
 import { inStorm } from './lake.js';
 import { ENDINGS } from './save.js';
@@ -68,6 +68,7 @@ function endingLook(game) {
     word: clamp01((T - 15.5) / 1.6),
     after: ease(17.5, 18.5, T),
     prompt: T > ENDING_DONE ? 0.55 + 0.35 * Math.sin(T * 2) : 0,
+    secret: game.secretEnding,
   };
 }
 
@@ -556,14 +557,16 @@ export class Renderer {
   drawDawn(s, end) {
     if (end.dawn <= 0.01) return;
     const g = s.createLinearGradient(0, 0, 0, VIEW_H * 0.85);
+    // The secret ending is warmer still: the amber of the prologue's evening, the village as it was.
+    const k = end.secret ? 1.45 : 1;
     g.addColorStop(0, `rgba(120,150,190,${0.12 * end.dawn})`);
-    g.addColorStop(0.6, `rgba(250,190,150,${0.28 * end.dawn})`);
-    g.addColorStop(1, `rgba(255,215,160,${0.4 * end.dawn})`);
+    g.addColorStop(0.6, end.secret ? `rgba(240,170,110,${0.34 * end.dawn})` : `rgba(250,190,150,${0.28 * end.dawn})`);
+    g.addColorStop(1, `rgba(255,215,160,${0.4 * k * end.dawn})`);
     s.fillStyle = g;
     s.fillRect(0, 0, VIEW.w, VIEW_H);
     s.save();
     s.globalCompositeOperation = 'lighter';
-    glow(s, VIEW.w * 0.78, 470, 520, '255,190,120', 0.22 * end.dawn);
+    glow(s, VIEW.w * 0.78, 470, 520, '255,190,120', 0.22 * k * end.dawn);
     s.restore();
   }
 
@@ -596,10 +599,11 @@ export class Renderer {
     }
     s.stroke();
     // Small cold-country flowers, as in the prologue, once the green is well in.
-    for (let x = Math.floor(x0 / 37) * 37; x < x1; x += 37) {
+    const step = end.secret ? 19 : 37;
+    for (let x = Math.floor(x0 / step) * step; x < x1; x += step) {
       if ((hash(223, x) + 1) / 2 > green * 0.8) continue;
       const gy = groundY(x) - 9 * green;
-      s.fillStyle = hash(227, x) > 0.3 ? '#f1cf62' : '#f4efe4';
+      s.fillStyle = end.secret && hash(229, x) > 0.4 ? '#f2b7c6' : hash(227, x) > 0.3 ? '#f1cf62' : '#f4efe4';
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2 + x;
         s.beginPath();
@@ -652,9 +656,26 @@ export class Renderer {
     c.shadowColor = 'rgba(20,12,8,0.6)';
     c.shadowBlur = 8;
     c.fillStyle = 'rgba(255,240,218,0.96)';
+    // The secret ending: warm motes rising from the hearth, like the prologue's sparks, all through the window.
+    if (end.secret && end.dawn > 0.05) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 46; i++) {
+        const q = ((game.endingT * (0.05 + 0.03 * ((i * 37) % 7) / 7) + i / 46) % 1);
+        const x = ((i * 131) % VIEW.w) + Math.sin(game.endingT * 0.7 + i) * 24;
+        const y = VIEW_H * (0.95 - 0.85 * q);
+        c.fillStyle = `rgba(255,200,120,${0.55 * end.dawn * Math.sin(Math.PI * q)})`;
+        c.fillRect(x, y, 2.2, 2.2);
+      }
+      c.restore();
+    }
     const lines = game.level.endingLines || {};
+    // Written as large as fits inside the window.
+    const line = (lines[end.secret ? 'whole' : game.ending] || '').toLowerCase();
     c.font = `58px ${HAND}`;
-    this.writeReveal(c, (lines[game.ending] || '').toLowerCase(), VIEW.w / 2, 140, end.line);
+    const fit = Math.min(58, Math.floor(58 * (VIEW.w - 260) / Math.max(1, c.measureText(line).width)));
+    c.font = `${fit}px ${HAND}`;
+    this.writeReveal(c, line, VIEW.w / 2, 140, end.line);
     c.font = `150px ${HAND}`;
     this.writeReveal(c, 'thaw', VIEW.w / 2, 268, end.word);
     c.shadowBlur = 0;
@@ -666,6 +687,7 @@ export class Renderer {
       c.fillStyle = `rgba(255,236,210,${0.9 * end.after})`;
       c.fillText(brought, VIEW.w / 2, 352);
       c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 378);
+      if (end.secret) c.fillText(game.secretNew ? 'you found the secret ending' : 'the secret ending', VIEW.w / 2, 404);
     }
     if (end.prompt > 0) {
       c.font = `300 14px ${SERIF}`;
@@ -2768,9 +2790,11 @@ export class Renderer {
       c.font = `italic 300 15px ${SERIF}`;
       c.fillStyle = `rgba(92,52,22,${0.85 * fade})`;
       c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 166);
-      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}`, cx, cy + 188);
+      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}${sv.secret ? '   ·   and the secret one' : ''}`, cx, cy + 188);
     }
     c.font = `italic 300 15px ${SERIF}`;
+    c.fillStyle = `rgba(22,40,50,${0.75 * fade})`;
+    c.fillText(game.settings.hard ? 'a hard walk: if her light goes out, the stage begins again   ·   H for a gentle walk' : 'a gentle walk   ·   H for a hard walk', cx, VIEW_H - 58);
     c.fillStyle = `rgba(22,40,50,${0.6 * fade})`;
     c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 30);
     this.drawToast(c, game);
@@ -3196,7 +3220,7 @@ export class Renderer {
       'move: arrows, WASD or left stick   ·   at a cairn, down takes the low way',
       'pulse: hold space or A',
       'mute: M   ·   volume: - and +   ·   screen shake: X   ·   full screen: F',
-      'replay this stage: R',
+      `replay this stage: R   ·   the walk: ${game.settings.hard ? 'hard' : 'gentle'} (H to change)`,
       'enter to start over from the beginning',
       'on a touch screen: hold left or right to walk, the middle to pulse, swipe down for the low way',
       'esc or start to resume',
@@ -3231,6 +3255,16 @@ export class Renderer {
     if (carried.length) {
       c.font = `italic 300 16px ${SERIF}`;
       c.fillText(carried.map((x) => x.text).join('  '), VIEW.w / 2, 308);
+    }
+    // By the fire, one of those walking with her says something about home: whoever joined in this stage, or else
+    // the last one to join.
+    const here = game.level.objects.filter((o) => o.home).map((o) => o.home);
+    const who = [...game.companions].reverse().find((cc) => here.includes(cc.home)) || game.companions[game.companions.length - 1];
+    const v = who && villager(who.home);
+    if (v && v.home) {
+      c.font = `italic 300 16px ${SERIF}`;
+      c.fillStyle = `rgba(22,40,50,${0.85 * clamp01((T - 7) / 1)})`;
+      c.fillText(`${v.name}: ${v.home}`, VIEW.w / 2, carried.length ? 340 : 314);
     }
     this.drawVillage(c, game, b);
     // At the end of the whole walk: how many of the endings have now been seen.

@@ -128,6 +128,8 @@ export class Game {
     this.finishRecorded = false;
     this.ending = null;
     this.endingNew = false;
+    this.secretEnding = false;
+    this.secretNew = false;
     this.wentLow = false;
     this.barFlash = 6;
     this.flashed = new Set();
@@ -236,10 +238,21 @@ export class Game {
       st.shake = !st.shake;
       changed = 'shake';
     }
+    // The walk: gentle (her light going out costs the last companion) or hard (it begins the stage again).
+    // Chosen on the title or the pause screen; the endings are the same either way.
+    if (input.wasPressed('KeyH') && (this.mode === 'title' || this.mode === 'paused')) {
+      st.hard = !st.hard;
+      changed = 'hard';
+    }
     if (!changed) return;
     if (changed === 'volume') this.audio.setMaster(this.settings.volume);
     saveSettings(this.settings);
-    this.toast = { text: changed === 'volume' ? `volume ${Math.round(this.settings.volume * 100)}%` : `screen shake ${this.settings.shake ? 'on' : 'off'}`, t: this.time };
+    const said = {
+      volume: `volume ${Math.round(st.volume * 100)}%`,
+      shake: `screen shake ${st.shake ? 'on' : 'off'}`,
+      hard: st.hard ? 'a hard walk: if her light goes out, the stage begins again' : 'a gentle walk',
+    };
+    this.toast = { text: said[changed], t: this.time };
   }
 
   // The title: continue the walk in progress, begin a new one, or pick up any stage reached before.
@@ -330,7 +343,12 @@ export class Game {
     if (!this.finishRecorded) {
       this.finishRecorded = true;
       const before = this.saved.endings;
-      this.ending = saveFinish({ n: this.ledger.saved.length, all: this.totalVillagers() }, this.ledger.trees || 0);
+      const n = this.ledger.saved.length;
+      const trees = this.ledger.trees || 0;
+      // Everyone brought home and every tree on the walk warmed: the secret ending.
+      this.secretEnding = n === this.totalVillagers() && trees >= this.totalTrees();
+      this.secretNew = this.secretEnding && !this.saved.secret;
+      this.ending = saveFinish({ n, all: this.totalVillagers() }, trees, this.secretEnding);
       this.endingNew = !before.includes(this.ending);
       this.saved = loadSave();
     }
@@ -1168,6 +1186,15 @@ export class Game {
       // while with her, keeps everyone's fire alight.
       const e = this.ember;
       lo.respawned = true;
+      // A hard walk: the cold takes the whole stage back, and it begins again as it began.
+      if (this.settings.hard) {
+        const t = lo.t;
+        this.reset();
+        this.mode = 'play';
+        this.lightsOut = { t, respawned: true };
+        this.say('the cold took it all back. the stage begins again', this.ember.x);
+        return;
+      }
       if (this.companions.length > 0 && !this.has('storyteller')) this.relapse();
       e.x = this.checkpoint.x;
       e.low = false;
