@@ -5,7 +5,7 @@ Copy the parts below into the itch.io page. Images in this folder:
 - `1-title.png` to `7-the-ending.png`: screenshots at 1280×720, in the order of the walk
 - `the-ending.gif`: the last moments, for the page or the cover (3 MB)
 
-Suggested cover: `2-the-still.png` or `7-the-ending.png`.
+Cover images, at itch.io's 630×500: `cover.png` (the Still: the moon, the lit lantern, the child with her coal) or `cover-alt.png` (Home: the street, the first windows lit). Both are frames from the game, with the title written in its own font.
 
 ---
 
