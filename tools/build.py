@@ -23,13 +23,20 @@ PLAY_NOTES = """THAW
 3. Press any key to wake. Sound on.
 
 Controls
-- Walk: Left and Right arrows, or A and D
-- Pulse: hold Space (you cannot move while pulsing)
+- Walk: Left and Right arrows, or A and D (or a gamepad's left stick)
+- Pulse: hold Space or A (you cannot move while pulsing). Press it in time with her heartbeat for a stronger pulse.
 - Take the low way at a cairn: Down arrow or S
-- Pause: Esc
+- Pause: Esc or P
 - Mute: M
+- Volume: - and +
+- Screen shake on or off: X
+- A gentle or a hard walk: H, on the title or the pause screen
+- Full screen: F
 - Replay the stage: R
 - Start over from the beginning: Enter (at the stage end or when paused)
+- Touch: hold the left or right of the screen to walk, the middle to pulse, swipe down for the low way
+
+Your walk is saved in the browser: the title offers to continue, or to pick any stage you have reached.
 
 Best in Chrome, Edge or Firefox.
 
