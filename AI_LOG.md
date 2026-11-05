@@ -30,6 +30,7 @@ The jam requires a clear AI disclosure in the game description. Keep this log cu
 | 2026-10-31 | Claude (Claude Code) | From research into comparable games: a gentle or hard walk (H), a secret ending for bringing everyone home and warming every tree, a calm beat at the start of Stage 5's street, and a line about home from a companion at each stage's fire (drafts for Ultraviolet to approve) | Requested by Ultraviolet; tested with bots and screenshots |
 | 2026-11-05 | Claude (Claude Code) | Mobile: sound through Web Audio when served from a website (iPhones ignore an audio element's volume), touch wording and touch zones, a pause button and tappable title and pause screens, a tap to skip the prologue, small text scaled up on small screens | Requested by Ultraviolet; tested on an emulated phone |
 | 2026-11-05 | Claude (Claude Code) | A how-to-play page after the prologue (begin after a few seconds of reading, or skip), and a ? button and pause-screen entry to open it again during the walk | Requested by Ultraviolet; tested on desktop and an emulated phone |
+| 2026-11-05 | Claude (Claude Code) | Smoother on phones: low detail now also draws the scene at 70% and the screen at base resolution, rebuilds the frost every other frame, and is detected from real frame times (a very slow device is caught within 30 frames) | Requested by Ultraviolet; measured on a simulated phone |
 | 2026-10-26 | Claude | Game design document drafting | Drafted from the team's direction and edited by the team |
 
 ## Not AI-generated so far

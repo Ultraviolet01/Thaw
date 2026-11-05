@@ -43,6 +43,9 @@ const SMALL_H = 180;
 const TILE_W = 1024;
 // The frost and its melt mask are built at half size: frost is soft anyway, and this keeps frame times low.
 const FROST_SCALE = 0.5;
+// In low detail the scene is drawn at this fraction of the view's size: mostly soft snow, frost and glow, so the
+// difference hardly shows, and it is the drawing a machine without a fast graphics chip struggles with most.
+const SCENE_LOW = 0.7;
 let FW = VIEW.w * FROST_SCALE;
 const FH = VIEW_H * FROST_SCALE;
 
@@ -230,16 +233,20 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    // In low detail the screen is drawn at the device's base resolution, not its high-density one.
+    const dpr = Math.min(devicePixelRatio || 1, this.lowDetail ? 1 : 2);
     this.canvas.width = Math.round(innerWidth * dpr);
     this.canvas.height = Math.round(innerHeight * dpr);
     // Widen the view to the screen's shape (within limits), then rebuild the offscreen canvases to match.
     const w = Math.round(Math.max(VIEW_MIN_W, Math.min(VIEW_MAX_W, (VIEW_H * innerWidth) / Math.max(1, innerHeight))) / 2) * 2;
-    if (w !== VIEW.w || !this.scene) {
+    // The scene is drawn at sceneScale of the view's size: full in normal detail, less in low detail.
+    const sc = this.lowDetail ? SCENE_LOW : 1;
+    if (w !== VIEW.w || !this.scene || this.sceneScale !== sc) {
       VIEW.w = w;
+      this.sceneScale = sc;
       FW = VIEW.w * FROST_SCALE;
       SMALL_W = Math.round(VIEW.w / 4);
-      this.scene = canvas(VIEW.w, VIEW_H);
+      this.scene = canvas(Math.round(VIEW.w * sc), Math.round(VIEW_H * sc));
       this.sctx = this.scene.getContext('2d');
       this.small = canvas(SMALL_W, SMALL_H);
       this.smctx = this.small.getContext('2d');
@@ -472,7 +479,7 @@ export class Renderer {
   draw(game, dt) {
     this.frame++;
     this.taps = [];
-    this.watchSpeed(dt);
+    this.watchSpeed();
     if (game.mode === 'title') return this.drawGate(game);
     if (game.mode === 'prologue') return this.drawPrologue(game, dt);
     if (game.mode === 'howto') return this.drawHowTo(game);
@@ -482,9 +489,14 @@ export class Renderer {
     const look = warmthLook(w);
 
     this.drawScene(game, dt);
-    const holes = this.holes(game);
-    this.buildMask(game, holes, dt);
-    this.buildFrost(game, holes, look);
+    // In low detail the frost (which changes slowly) is rebuilt every other frame, its melting kept to time.
+    this.frostDt = (this.frostDt || 0) + dt;
+    if (!this.lowDetail || this.frame % 2 === 0 || game.transition) {
+      const holes = this.holes(game);
+      this.buildMask(game, holes, this.frostDt);
+      this.buildFrost(game, holes, look);
+      this.frostDt = 0;
+    }
 
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -502,7 +514,7 @@ export class Renderer {
     if (!this.lowDetail && (look.blur > 0.05 || look.sat < 0.99)) {
       c.filter = `blur(${(look.blur * this.scale).toFixed(2)}px) saturate(${look.sat.toFixed(2)}) brightness(${look.bright.toFixed(2)})`;
     }
-    c.drawImage(this.scene, 0, 0);
+    c.drawImage(this.scene, 0, 0, VIEW.w, VIEW_H);
     c.filter = 'none';
     // Low detail: no filters, so the cold drains the colour with a plain grey wash instead.
     if (this.lowDetail && look.sat < 0.99) {
@@ -581,6 +593,7 @@ export class Renderer {
 
   drawScene(game, dt) {
     const s = this.sctx;
+    s.setTransform(this.sceneScale, 0, 0, this.sceneScale, 0, 0);
     const cam = game.camX;
     const t = game.time;
     // High on a mountain the far hills sit lower on the screen.
@@ -2585,17 +2598,28 @@ export class Renderer {
     }
   }
 
-  // If frames come slowly (under about 45 a second, over two seconds of play), drop to low detail for good: the
-  // canvas filters (the frost's colour, the melt edge's feathering, the cold blur) are what a slow machine
-  // struggles with. Never switched back, so the look does not flicker between the two.
-  watchSpeed(dt) {
-    if (this.lowDetail || dt <= 0 || dt >= 0.1) return;
+  // If frames come slowly (under about 45 a second, over two seconds of play), drop to low detail for good: no canvas
+  // filters (the frost's colour, the melt edge's feathering, the cold blur), the scene drawn smaller, and the screen
+  // at the device's base resolution. Never switched back, so the look does not flicker between the two.
+  watchSpeed() {
+    // Measured from the real time between frames: the game's own step is capped, so a very slow machine would look
+    // no slower than a merely slow one. Only a gap of a second or more (a hidden tab) is left out.
+    const now = performance.now();
+    const d = this.lastFrameAt ? (now - this.lastFrameAt) / 1000 : 0;
+    this.lastFrameAt = now;
+    if (this.lowDetail || d <= 0 || d >= 1) return;
     this.slow = this.slow || [];
-    this.slow.push(dt);
-    if (this.slow.length < 120) return;
+    this.slow.push(d);
+    // A clearly slow machine is noticed within 30 frames; a borderline one is judged over 120.
     const avg = this.slow.reduce((a, b) => a + b, 0) / this.slow.length;
+    const clearlySlow = this.slow.length >= 30 && avg > 0.05;
+    if (this.slow.length < 120 && !clearlySlow) return;
     this.slow = [];
-    if (avg > 0.022) this.lowDetail = true;
+    if (avg > 0.022) {
+      this.lowDetail = true;
+      // A smaller scene and screen to draw: rebuilt at once.
+      this.resize();
+    }
   }
 
   // ---------- On top of the glass ----------
@@ -3020,6 +3044,7 @@ export class Renderer {
     }
     const figs = this.prologueFigs;
     const s = this.sctx;
+    s.setTransform(this.sceneScale, 0, 0, this.sceneScale, 0, 0);
     const wind = -70 - 520 * P.wind();
 
     // Sky: an amber evening before, the frozen night after.
@@ -3230,7 +3255,7 @@ export class Renderer {
     c.scale(z, z);
     c.translate(-px, -py);
     c.filter = `saturate(${(1 - 0.85 * cold).toFixed(2)})`;
-    c.drawImage(this.scene, 0, 0);
+    c.drawImage(this.scene, 0, 0, VIEW.w, VIEW_H);
     c.filter = 'none';
     c.restore();
     if (fr > 0) {
