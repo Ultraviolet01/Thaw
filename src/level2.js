@@ -64,7 +64,7 @@ export const level2 = {
   hints: [
     { x: 650, text: 'the wind comes in waves', until: 'gusted' },
     { x: 1150, text: 'hide behind the rocks', after: 'gusted', until: 'sheltered' },
-    { x: X0 - 120, text: 'down for the long way, under the ice', until: 'routeChosen' },
+    { x: X0 - 120, text: 'down for the long way, under the ice', touch: 'swipe down for the long way, under the ice', until: 'routeChosen' },
     { x: 4000, text: 'the smith is frozen here', low: true },
     { x: 6050, text: 'the shepherd is frozen here' },
   ],

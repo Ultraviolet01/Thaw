@@ -20,10 +20,14 @@ export class Input {
 
     // Touch: hold the left or right third of the screen to walk, the middle to pulse; swipe down in the middle
     // to take the low way at a cairn. A tap is also "any key".
+    // touchMode: the player is on a touch screen, so the game speaks of taps, not keys. A key press switches it off.
+    this.touchMode = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+    addEventListener('keydown', () => { this.touchMode = false; });
     this.touches = new Map();
     const zone = (x) => (x < innerWidth / 3 ? 'left' : x > (innerWidth * 2) / 3 ? 'right' : 'pulse');
     addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse') return;
+      this.touchMode = true;
       const z = zone(e.clientX);
       this.touches.set(e.pointerId, { zone: z, y0: e.clientY, y: e.clientY });
       if (z === 'pulse') this.pressed.add('TouchPulse');

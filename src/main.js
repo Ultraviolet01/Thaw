@@ -50,11 +50,28 @@ addEventListener('keydown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!renderer.fullscreenHit(e.clientX, e.clientY)) return;
-  toggleFullscreen();
-  // A click on the button is not "press any key": keep it from starting the game.
-  e.stopPropagation();
+  if (renderer.fullscreenHit(e.clientX, e.clientY)) {
+    toggleFullscreen();
+    // A click on the button is not "press any key": keep it from starting the game.
+    e.stopPropagation();
+    return;
+  }
+  // On a touch screen: the pause button, and the tappable lines on the title and pause screens. Each stands in for
+  // the key it names, and is not also a tap on the game.
+  const code = renderer.tapTarget(e.clientX, e.clientY, game);
+  if (code) {
+    if (e.pointerType !== 'mouse') input.touchMode = true;
+    input.pressed.add(code);
+    e.stopPropagation();
+  }
 });
+
+// Sound can only be started from inside a key press or a tap on some browsers (iPhones above all), so the first
+// one starts it here, in the event itself.
+const startSound = () => audio.start();
+addEventListener('pointerdown', startSound);
+addEventListener('touchend', startSound);
+addEventListener('keydown', startSound);
 
 canvas.focus();
 requestAnimationFrame(frame);

@@ -75,4 +75,4 @@ This game contains AI-generated content. The idea, story, game design and level 
 - **Viewport:** 1280 × 720, with the full screen button on.
 - **Genre:** Adventure
 - **Tags:** atmospheric, short, singleplayer, story-rich, snow, emotional, 2D, relaxing
-- **Mobile:** works on phones held sideways; tick "Mobile friendly" if you have tested it on yours.
+- **Mobile:** tick "Mobile friendly" and set the orientation to landscape. On a phone the game speaks of taps, shows where to hold, has a pause button with tappable settings, scales its small text up, and plays sound through Web Audio so iPhones get the fades and the volume setting. Tested on an emulated phone; still worth one try on a real iPhone and Android phone.

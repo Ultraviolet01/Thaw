@@ -138,6 +138,8 @@ export class Game {
 
   update(dt, input) {
     this.time += dt;
+    // On a touch screen the words on screen speak of taps instead of keys.
+    this.touchMode = input.touchMode;
     this.updateSettings(input);
     if (this.mode === 'title') {
       this.updateTitle(input);
@@ -147,7 +149,8 @@ export class Game {
     if (this.mode === 'prologue') {
       if (input.wasPressed('KeyM')) this.audio.toggleMute();
       this.prologue.update(dt, this.audio);
-      if (input.pausePressed) {
+      // Esc skips it; on a touch screen, a tap does (not the tap that started it).
+      if (input.pausePressed || (this.touchMode && this.prologue.t > 1 && input.wasPressed('Pointer'))) {
         this.prologue.skip();
         this.audio.fadeTheme();
       }
@@ -180,6 +183,10 @@ export class Game {
     if (this.mode === 'paused') {
       if (input.pausePressed) this.mode = 'play';
       else if (this.startOverPressed(input)) this.startOver();
+      else if (input.wasPressed('KeyR')) {
+        this.reset();
+        this.mode = 'play';
+      }
       return;
     }
     if (input.pausePressed && this.mode === 'play') {

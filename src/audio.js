@@ -43,6 +43,42 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 // The player's master volume, applied to every sound.
 let MASTER = 1;
 
+// Volume through Web Audio. iPhones and iPads ignore an audio element's volume, so every fade and the volume setting
+// would do nothing there. When the game is served from a website, each element is routed through a gain node, which
+// does work everywhere. Opened straight from disk, Web Audio cannot read the files, so the elements' own volume is used.
+const WEB_AUDIO = typeof location !== 'undefined' && /^https?:$/.test(location.protocol)
+  && !!(window.AudioContext || window.webkitAudioContext);
+let CTX = null;
+let OUT = null;
+const GAINS = new WeakMap();
+
+function setVol(el, v) {
+  if (CTX) {
+    let g = GAINS.get(el);
+    if (!g) {
+      try {
+        const src = CTX.createMediaElementSource(el);
+        g = CTX.createGain();
+        src.connect(g);
+        g.connect(OUT);
+        GAINS.set(el, g);
+        el.volume = 1;
+      } catch (e) {
+        el.volume = v;
+        return;
+      }
+    }
+    g.gain.value = v;
+    return;
+  }
+  el.volume = v;
+}
+
+function getVol(el) {
+  const g = CTX && GAINS.get(el);
+  return g ? g.gain.value : el.volume;
+}
+
 // One sound effect, with a few players kept ready and reused. Making a new player for every footstep or
 // heartbeat makes the browser load and decode the file again each time, which can stall a frame.
 class SoundPool {
@@ -61,7 +97,7 @@ class SoundPool {
     el.pause();
     el.currentTime = 0;
     el.playbackRate = rate;
-    el.volume = clamp01(volume * MASTER);
+    setVol(el, clamp01(volume * MASTER));
     el.muted = muted;
     el.play().catch(() => {});
   }
@@ -123,8 +159,8 @@ class FileLoop {
       ka = 0;
       kb = 1;
     }
-    a.volume = clamp01(this.vol * ka * MASTER);
-    b.volume = clamp01(this.vol * kb * MASTER);
+    setVol(a, clamp01(this.vol * ka * MASTER));
+    setVol(b, clamp01(this.vol * kb * MASTER));
     if (this.vol === 0 && this.target === 0) {
       this.els.forEach((e) => e.pause());
       clearInterval(this.timer);
@@ -170,8 +206,25 @@ export class GameAudio {
   }
 
   // Called from the first key press: browsers only let a page play sound after the player has interacted.
+  // Whether sound runs through Web Audio ('running'), is waiting to start, or uses the elements' own volume ('off').
+  get webAudio() {
+    return CTX ? CTX.state : 'off';
+  }
+
+  // Called from the first key press or tap, which is when browsers let a page start sound.
   start() {
     this.started = true;
+    if (WEB_AUDIO && !CTX) {
+      try {
+        CTX = new (window.AudioContext || window.webkitAudioContext)();
+        OUT = CTX.createGain();
+        OUT.gain.value = this.muted ? 0 : 1;
+        OUT.connect(CTX.destination);
+      } catch (e) {
+        CTX = null;
+      }
+    }
+    if (CTX && CTX.state === 'suspended') CTX.resume().catch(() => {});
   }
 
   // 0 = a breath of wind, 1 = a gale.
@@ -279,14 +332,14 @@ export class GameAudio {
     el.currentTime = 1;
     el.preservesPitch = false;
     el.playbackRate = rate;
-    el.volume = 0;
+    setVol(el, 0);
     el.play().catch(() => {});
     let t = 0;
     const step = () => {
       if (this.voiceToken !== token) return;
       t += 0.05;
       const v = t < 0.3 ? t / 0.3 : Math.max(0, 1 - (t - 0.3) / 2.2);
-      el.volume = 0.45 * v * MASTER;
+      setVol(el, 0.45 * v * MASTER);
       if (v <= 0) {
         el.pause();
         return;
@@ -358,7 +411,7 @@ export class GameAudio {
     if (this.theme) return;
     const el = this.themePreload || new Audio(THEME_SRC);
     this.themePreload = null;
-    el.volume = 0.85 * MASTER;
+    setVol(el, 0.85 * MASTER);
     el.muted = this.muted;
     el.addEventListener('error', () => { this.themeFailed = true; });
     el.addEventListener('ended', () => { this.themeEnded = true; });
@@ -377,7 +430,7 @@ export class GameAudio {
     this.themeEnded = false;
     this.themeFailed = false;
     const el = new Audio(THEME_SRC);
-    el.volume = 0;
+    setVol(el, 0);
     el.muted = this.muted;
     const fallback = () => { this.themeFailed = true; this.restMusic.set(0.5); };
     el.addEventListener('error', fallback);
@@ -386,8 +439,8 @@ export class GameAudio {
     this.theme = el;
     const rise = () => {
       if (this.theme !== el) return;
-      el.volume = Math.min(0.85 * MASTER, el.volume + 0.04 * MASTER);
-      if (el.volume < 0.85 * MASTER) setTimeout(rise, 50);
+      setVol(el, Math.min(0.85 * MASTER, getVol(el) + 0.04 * MASTER));
+      if (getVol(el) < 0.85 * MASTER) setTimeout(rise, 50);
     };
     rise();
   }
@@ -401,8 +454,8 @@ export class GameAudio {
     const el = this.theme;
     if (!el || this.themeEnded) return;
     const step = () => {
-      el.volume = Math.max(0, el.volume - 0.06);
-      if (el.volume > 0) setTimeout(step, 50);
+      setVol(el, Math.max(0, getVol(el) - 0.06));
+      if (getVol(el) > 0) setTimeout(step, 50);
       else { el.pause(); this.themeEnded = true; }
     };
     step();
@@ -412,11 +465,12 @@ export class GameAudio {
   setMaster(v) {
     const was = MASTER;
     MASTER = clamp01(v);
-    if (this.theme && was > 0) this.theme.volume = clamp01((this.theme.volume / was) * MASTER);
+    if (this.theme && was > 0) setVol(this.theme, clamp01((getVol(this.theme) / was) * MASTER));
   }
 
   toggleMute() {
     this.muted = !this.muted;
+    if (OUT) OUT.gain.value = this.muted ? 0 : 1;
     if (this.theme) this.theme.muted = this.muted;
     this.loops.forEach((l) => l.setMuted(this.muted));
     this.hums.forEach((h) => h.setMuted(this.muted));

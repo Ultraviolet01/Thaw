@@ -20,8 +20,8 @@ export const level1 = {
   mist: [{ x0: 1980, x1: 2880 }],
   fire: { x: 4200 },
   hints: [
-    { x: 300, text: 'arrows to walk', until: 'moved' },
-    { x: 650, text: 'hold space to pulse', until: 'pulsed' },
+    { x: 300, text: 'arrows to walk', touch: 'hold the left or right to walk', until: 'moved' },
+    { x: 650, text: 'hold space to pulse', touch: 'hold the middle to pulse', until: 'pulsed' },
     { x: 980, text: 'every pulse costs warmth', after: 'pulsed' },
     { x: 1540, text: 'the light, or the one beside it?', until: 'forkChosen' },
     // Shown once the lantern is lit, until the player has warmed up beside it.

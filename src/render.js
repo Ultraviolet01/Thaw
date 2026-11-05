@@ -263,8 +263,80 @@ export class Renderer {
       this.growth = null;
     }
     this.scale = Math.min(this.canvas.width / VIEW.w, this.canvas.height / VIEW_H);
+    // On a small screen (a phone) the view is drawn at about half size: the small text grows to stay readable.
+    this.textBoost = Math.max(1, Math.min(1.6, 0.8 / (this.scale / dpr)));
     this.ox = (this.canvas.width - VIEW.w * this.scale) / 2;
     this.oy = (this.canvas.height - VIEW_H * this.scale) / 2;
+  }
+
+  // The serif face at a size, larger on a small screen.
+  serif(style, px) {
+    return `${style}${Math.round(px * (this.textBoost || 1))}px ${SERIF}`;
+  }
+
+  // Tap targets on a touch screen: the pause button, and lines on the title and pause screens that stand in for a key.
+  // Gathered as each frame is drawn; tapTarget names the key a tap at a point stands for.
+  addTap(x0, y0, x1, y1, code) {
+    this.taps.push({ x0, y0, x1, y1, code });
+  }
+
+  tapText(c, text, x, y, code, maxW = VIEW.w - 80) {
+    c.fillText(text, x, y, maxW);
+    const w = Math.min(maxW, c.measureText(text).width);
+    this.addTap(x - w / 2 - 18, y - 28, x + w / 2 + 18, y + 14, code);
+  }
+
+  tapButton(c, label, x, y, w, h, code) {
+    c.fillStyle = 'rgba(23,48,59,0.12)';
+    roundRect(c, x - w / 2, y - h / 2, w, h, 10);
+    c.fill();
+    c.strokeStyle = 'rgba(23,48,59,0.45)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    c.fillStyle = '#17303b';
+    c.textAlign = 'center';
+    c.fillText(label, x, y + 6, w - 12);
+    this.addTap(x - w / 2, y - h / 2, x + w / 2, y + h / 2, code);
+  }
+
+  tapTarget(clientX, clientY, game) {
+    if (!this.taps || !this.taps.length) return null;
+    const p = this.toView(clientX, clientY);
+    const t = this.taps.find((r) => p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1);
+    return t ? t.code : null;
+  }
+
+  // On a touch screen, a pause button beside the full-screen one.
+  drawPauseButton(c) {
+    const x = VIEW.w - 96, y = 16;
+    c.fillStyle = 'rgba(225,236,244,0.55)';
+    c.fillRect(x + 9, y + 6, 4, 18);
+    c.fillRect(x + 17, y + 6, 4, 18);
+    this.addTap(x - 8, y - 8, x + 38, y + 38, 'Escape');
+  }
+
+  // The first moments on a touch screen: where to hold to walk and to pulse, glowing faintly until she has done both.
+  drawTouchZones(c, game) {
+    const a = 0.5 + 0.2 * Math.sin(game.time * 2.4);
+    c.save();
+    c.fillStyle = `rgba(235,244,250,${0.07 * a})`;
+    c.fillRect(0, 0, VIEW.w / 3, VIEW_H);
+    c.fillRect((VIEW.w * 2) / 3, 0, VIEW.w / 3, VIEW_H);
+    c.strokeStyle = `rgba(23,48,59,${0.5 * a})`;
+    c.lineWidth = 4;
+    c.lineCap = 'round';
+    const y = VIEW_H * 0.72;
+    for (const [x, d] of [[VIEW.w / 6, -1], [(VIEW.w * 5) / 6, 1]]) {
+      c.beginPath();
+      c.moveTo(x - 10 * d, y - 22);
+      c.lineTo(x + 10 * d, y);
+      c.lineTo(x - 10 * d, y + 22);
+      c.stroke();
+    }
+    c.beginPath();
+    c.arc(VIEW.w / 2, y, 26, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
   }
 
   // Screen pixels (as the mouse reports them) to view coordinates.
@@ -399,6 +471,7 @@ export class Renderer {
 
   draw(game, dt) {
     this.frame++;
+    this.taps = [];
     this.watchSpeed(dt);
     if (game.mode === 'title') return this.drawGate(game);
     if (game.mode === 'prologue') return this.drawPrologue(game, dt);
@@ -487,13 +560,18 @@ export class Renderer {
     }
     if (end) this.drawEnding(c, game, end);
     if (game.audio.muted) {
-      c.font = `13px ${SERIF}`;
+      c.font = this.serif('', 13);
       c.fillStyle = 'rgba(200,215,230,0.55)';
       c.textAlign = 'left';
       c.fillText('muted (M)', 28, VIEW_H - 24);
     }
     this.drawToast(c, game);
     this.drawTurnHint(c);
+    if (game.touchMode && game.mode === 'play' && !game.transition) {
+      this.drawPauseButton(c);
+      const settling = game.intro && game.intro.t < game.introLock();
+      if (game.stage === 0 && !settling && (!game.hintFlags.moved || !game.hintFlags.pulsed)) this.drawTouchZones(c, game);
+    }
     c.restore();
   }
 
@@ -683,16 +761,16 @@ export class Renderer {
       const sv = game.saved;
       const brought = `${game.ledger.saved.length} of ${game.totalVillagers()} brought home   ·   trees warmed: ${game.ledger.trees || 0} of ${game.totalTrees()}`;
       const found = `endings found: ${sv.endings.length} of ${ENDINGS.length}`;
-      c.font = `italic 300 16px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 16);
       c.fillStyle = `rgba(255,236,210,${0.9 * end.after})`;
       c.fillText(brought, VIEW.w / 2, 352);
       c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 378);
       if (end.secret) c.fillText(game.secretNew ? 'you found the secret ending' : 'the secret ending', VIEW.w / 2, 404);
     }
     if (end.prompt > 0) {
-      c.font = `300 14px ${SERIF}`;
+      c.font = this.serif('300 ', 14);
       c.fillStyle = `rgba(220,200,180,${end.prompt})`;
-      c.fillText('press any key', VIEW.w / 2, VIEW_H - 24);
+      c.fillText(game.touchMode ? 'tap to go on' : 'press any key', VIEW.w / 2, VIEW_H - 24);
     }
   }
 
@@ -2320,7 +2398,7 @@ export class Renderer {
       if (this.hintAlpha[i] < 0.01) return;
       shown = Math.max(shown, this.hintAlpha[i]);
       tm.globalAlpha = 0.9 * this.hintAlpha[i];
-      tm.fillText(h.text, h.x, 175);
+      tm.fillText(game.touchMode && h.touch ? h.touch : h.text, h.x, 175);
     });
     if (note) {
       const age = game.time - note.t;
@@ -2586,7 +2664,7 @@ export class Renderer {
     }
     if (game.barFlash > 0 || low) {
       const a = low ? 0.8 : Math.min(1, game.barFlash);
-      c.font = `italic 300 15px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 15);
       c.textAlign = 'left';
       c.fillStyle = `rgba(20,34,42,${a * fade})`;
       c.fillText('warmth', x + bw + 12, y + 7);
@@ -2598,13 +2676,16 @@ export class Renderer {
     const a = game.titleFade;
     const t = game.intro.t;
     c.textAlign = 'center';
-    c.font = `italic 300 21px ${SERIF}`;
+    c.font = this.serif('italic 300 ', 21);
     c.fillStyle = `rgba(22,40,50,${a * clamp01((t - 4.2) / 1)})`;
     c.fillText('a small warmth in a frozen world', VIEW.w / 2, 270);
-    c.font = `300 14px ${SERIF}`;
+    c.font = this.serif('300 ', 14);
     c.fillStyle = `rgba(22,40,50,${0.75 * a * clamp01((t - 5) / 1)})`;
-    c.fillText('walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M   ·   full screen: F', VIEW.w / 2, VIEW_H - 40);
-    c.font = `italic 300 13px ${SERIF}`;
+    const controls = game.touchMode
+      ? 'walk: hold the left or right   ·   pulse: hold the middle   ·   pause: the button in the corner'
+      : 'walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M   ·   full screen: F';
+    c.fillText(controls, VIEW.w / 2, VIEW_H - 40, VIEW.w - 80);
+    c.font = this.serif('italic 300 ', 13);
     c.fillStyle = `rgba(22,40,50,${0.6 * a * clamp01((t - 5) / 1)})`;
     c.fillText('music: thatgamejam #02 theme by Jason Grace', VIEW.w / 2, VIEW_H - 62);
   }
@@ -2767,36 +2848,50 @@ export class Renderer {
     const cur = sv.current && game.levels[sv.current.stage];
     const fade = clamp01((t - 1.6) / 1.2);
     const cy = 340;
-    c.font = `300 18px ${SERIF}`;
+    // On a small screen the text is larger, so the lines spread out with it. On a touch screen they speak of taps,
+    // and the lines that stand for a key can be tapped.
+    const k = this.textBoost || 1;
+    const touch = game.touchMode;
+    const W = VIEW.w - 80;
+    c.font = this.serif('300 ', 18);
     c.fillStyle = `rgba(22,40,50,${fade * (0.6 + 0.3 * Math.sin(t * 2))})`;
-    c.fillText(cur ? 'press any key to continue' : 'press any key to begin', cx, cy);
-    c.font = `italic 300 15px ${SERIF}`;
+    const go = cur ? 'continue' : 'begin';
+    c.fillText(touch ? `tap to ${go}` : `press any key to ${go}`, cx, cy, W);
+    c.font = this.serif('italic 300 ', 15);
     c.fillStyle = `rgba(22,40,50,${0.8 * fade})`;
     if (cur) {
-      c.fillText(`stage ${sv.current.stage + 1}, ${cur.name.toLowerCase()}`, cx, cy + 28);
-      c.fillText('N for a new walk, from the beginning', cx, cy + 54);
+      c.fillText(`stage ${sv.current.stage + 1}, ${cur.name.toLowerCase()}`, cx, cy + 28 * k, W);
+      if (touch) this.tapText(c, 'or tap here for a new walk, from the beginning', cx, cy + 56 * k, 'KeyN');
+      else c.fillText('N for a new walk, from the beginning', cx, cy + 54 * k, W);
     }
     // Any stage reached before can be walked again, as things stood when it began.
     if (sv.reached > 0) {
       const names = game.levels.slice(0, sv.reached + 1).map((L, i) => `${i + 1}  ${L.name.toLowerCase()}`);
-      c.font = `300 15px ${SERIF}`;
+      c.font = this.serif('300 ', 15);
       c.fillStyle = `rgba(22,40,50,${0.72 * fade})`;
-      c.fillText('or press the number of a stage:', cx, cy + 100);
-      c.fillText(names.join('      '), cx, cy + 122);
+      c.fillText(touch ? 'or tap a stage:' : 'or press the number of a stage:', cx, cy + 100 * k, W);
+      if (touch) {
+        const gap = Math.min(220, W / names.length);
+        names.forEach((n, i) => this.tapText(c, n, cx + (i - (names.length - 1) / 2) * gap, cy + 128 * k, `Digit${i + 1}`, gap - 12));
+      } else {
+        c.fillText(names.join('      '), cx, cy + 122 * k, W);
+      }
     }
     // The record of finished walks: the best one, and how many of the endings have been seen.
     if (sv.finished > 0 && sv.best) {
       const trees = game.levels.reduce((n, L) => n + L.objects.filter((o) => o.type === 'tree').length, 0);
-      c.font = `italic 300 15px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 15);
       c.fillStyle = `rgba(92,52,22,${0.85 * fade})`;
-      c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 166);
-      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}${sv.secret ? '   ·   and the secret one' : ''}`, cx, cy + 188);
+      c.fillText(`your best walk: ${sv.best.saved} of ${sv.best.all} brought home   ·   trees warmed: ${sv.best.trees} of ${trees}`, cx, cy + 166 * k, W);
+      c.fillText(`endings found: ${sv.endings.length} of ${ENDINGS.length}${sv.secret ? '   ·   and the secret one' : ''}`, cx, cy + 188 * k, W);
     }
-    c.font = `italic 300 15px ${SERIF}`;
+    c.font = this.serif('italic 300 ', 15);
     c.fillStyle = `rgba(22,40,50,${0.75 * fade})`;
-    c.fillText(game.settings.hard ? 'a hard walk: if her light goes out, the stage begins again   ·   H for a gentle walk' : 'a gentle walk   ·   H for a hard walk', cx, VIEW_H - 58);
+    const walk = game.settings.hard ? 'a hard walk: if her light goes out, the stage begins again' : 'a gentle walk';
+    if (touch) this.tapText(c, `${walk}   ·   tap here for a ${game.settings.hard ? 'gentle' : 'hard'} walk`, cx, VIEW_H - 30 - 30 * k, 'KeyH');
+    else c.fillText(`${walk}   ·   H for a ${game.settings.hard ? 'gentle' : 'hard'} walk`, cx, VIEW_H - 30 - 28 * k, W);
     c.fillStyle = `rgba(22,40,50,${0.6 * fade})`;
-    c.fillText('best with sound on   ·   F for full screen', cx, VIEW_H - 30);
+    c.fillText(touch ? 'best with sound on' : 'best with sound on   ·   F for full screen', cx, VIEW_H - 30, W);
     this.drawToast(c, game);
     this.drawTurnHint(c);
     c.restore();
@@ -3077,10 +3172,10 @@ export class Renderer {
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (t > 3 && t < 55) {
-      c.font = `300 13px ${SERIF}`;
+      c.font = this.serif('300 ', 13);
       c.textAlign = 'right';
       c.fillStyle = `rgba(200,212,222,${0.35 * clamp01((t - 3) / 2)})`;
-      c.fillText('esc to skip', VIEW.w - 28, VIEW_H - 24);
+      c.fillText(game.touchMode ? 'tap to skip' : 'esc to skip', VIEW.w - 28, VIEW_H - 24);
     }
     c.restore();
   }
@@ -3181,7 +3276,7 @@ export class Renderer {
         c.restore();
       }
       if (known) {
-        c.font = `italic 300 12px ${SERIF}`;
+        c.font = this.serif('italic 300 ', 12);
         c.textAlign = 'center';
         c.fillStyle = `rgba(22,40,50,${0.85 * a})`;
         c.fillText(v.name, x, base + 18);
@@ -3192,7 +3287,7 @@ export class Renderer {
   // A phone held upright shows the game as a thin strip: ask for it sideways.
   drawTurnHint(c) {
     if (!(innerHeight > innerWidth * 1.1)) return;
-    c.font = `italic 300 28px ${SERIF}`;
+    c.font = this.serif('italic 300 ', 28);
     c.textAlign = 'center';
     c.fillStyle = 'rgba(22,40,50,0.85)';
     c.fillText('turn your phone sideways to play', VIEW.w / 2, 60);
@@ -3202,7 +3297,7 @@ export class Renderer {
   drawToast(c, game) {
     const tt = game.toast;
     if (!tt || game.time - tt.t > 1.8) return;
-    c.font = `15px ${SERIF}`;
+    c.font = this.serif('', 15);
     c.textAlign = 'right';
     c.fillStyle = `rgba(22,40,50,${0.85 * Math.min(1, (1.8 - (game.time - tt.t)) / 0.4)})`;
     c.fillText(tt.text, VIEW.w - 28, VIEW_H - 24);
@@ -3215,7 +3310,19 @@ export class Renderer {
     c.fillStyle = '#17303b';
     c.font = `70px ${HAND}`;
     c.fillText('paused', VIEW.w / 2, VIEW_H / 2 - 70);
-    c.font = `300 18px ${SERIF}`;
+    c.font = this.serif('300 ', 18);
+    // On a touch screen the keys become buttons.
+    if (game.touchMode) {
+      const st = game.settings;
+      const bw = Math.min(250, (VIEW.w - 120) / 4), bh = 56 * Math.min(1.3, this.textBoost || 1);
+      const row = (labels, y) => labels.forEach(([label, code], i) => this.tapButton(c, label, VIEW.w / 2 + (i - (labels.length - 1) / 2) * (bw + 16), y, bw, bh, code));
+      row([['resume', 'Escape'], ['replay this stage', 'KeyR'], ['start over', 'Enter']], VIEW_H / 2 + 10);
+      row([['volume -', 'Minus'], ['volume +', 'Equal'], [`shake: ${st.shake ? 'on' : 'off'}`, 'KeyX'], [`walk: ${st.hard ? 'hard' : 'gentle'}`, 'KeyH']], VIEW_H / 2 + 30 + bh);
+      c.fillStyle = '#17303b';
+      c.font = this.serif('italic 300 ', 15);
+      c.fillText('hold the left or right to walk, the middle to pulse, swipe down for the low way', VIEW.w / 2, VIEW_H / 2 + 60 + bh * 2, VIEW.w - 80);
+      return;
+    }
     const lines = [
       'move: arrows, WASD or left stick   ·   at a cairn, down takes the low way',
       'pulse: hold space or A',
@@ -3225,7 +3332,8 @@ export class Renderer {
       'on a touch screen: hold left or right to walk, the middle to pulse, swipe down for the low way',
       'esc or start to resume',
     ];
-    lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32));
+    const k = this.textBoost || 1;
+    lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32 * Math.min(k, 1.25), VIEW.w - 80));
   }
 
   drawStageEndText(c, game) {
@@ -3233,14 +3341,14 @@ export class Renderer {
     const a = clamp01((T - 1) / 1);
     c.textAlign = 'center';
     // Said plainly first: the stage is done.
-    c.font = `300 16px ${SERIF}`;
+    c.font = this.serif('300 ', 16);
     c.fillStyle = `rgba(22,40,50,${0.9 * a})`;
     c.fillText(`STAGE ${game.stage + 1} COMPLETE`.split('').join(' '), VIEW.w / 2, 96);
-    c.font = `300 15px ${SERIF}`;
+    c.font = this.serif('300 ', 15);
     c.fillStyle = `rgba(22,40,50,${0.7 * a})`;
     c.fillText(game.level.name.toUpperCase().split('').join(' '), VIEW.w / 2, 122);
     const b = clamp01((T - 5.8) / 1);
-    c.font = `italic 300 17px ${SERIF}`;
+    c.font = this.serif('italic 300 ', 17);
     c.fillStyle = `rgba(22,40,50,${b})`;
     const trees = game.treesThisStage();
     const treeLine = trees.total ? `   ·   trees warmed: ${trees.warmed} of ${trees.total}` : '';
@@ -3253,7 +3361,7 @@ export class Renderer {
     const carries = game.level.carries || {};
     const carried = Object.keys(game.choices).map((k) => carries[k] && carries[k][game.choices[k]]).filter(Boolean);
     if (carried.length) {
-      c.font = `italic 300 16px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 16);
       c.fillText(carried.map((x) => x.text).join('  '), VIEW.w / 2, 308);
     }
     // By the fire, one of those walking with her says something about home: whoever joined in this stage, or else
@@ -3262,22 +3370,23 @@ export class Renderer {
     const who = [...game.companions].reverse().find((cc) => here.includes(cc.home)) || game.companions[game.companions.length - 1];
     const v = who && villager(who.home);
     if (v && v.home) {
-      c.font = `italic 300 16px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 16);
       c.fillStyle = `rgba(22,40,50,${0.85 * clamp01((T - 7) / 1)})`;
       c.fillText(`${v.name}: ${v.home}`, VIEW.w / 2, carried.length ? 340 : 314);
     }
     this.drawVillage(c, game, b);
     // At the end of the whole walk: how many of the endings have now been seen.
     if (game.ending) {
-      c.font = `italic 300 16px ${SERIF}`;
+      c.font = this.serif('italic 300 ', 16);
       c.fillStyle = `rgba(22,40,50,${0.8 * b})`;
       const found = `endings found: ${game.saved.endings.length} of ${ENDINGS.length}`;
       c.fillText(game.endingNew ? `a new ending   ·   ${found}` : found, VIEW.w / 2, 474);
     }
-    c.font = `300 15px ${SERIF}`;
+    c.font = this.serif('300 ', 15);
     c.fillStyle = `rgba(22,40,50,${0.75 * b})`;
-    const on = game.hasNextStage() ? 'space to walk on' : 'space to keep wandering';
+    const on = game.hasNextStage() ? 'walk on' : 'keep wandering';
     // Along the bottom, clear of the group standing at the fire.
-    c.fillText(`${on}   ·   R to replay this stage   ·   enter to start over from the beginning`, VIEW.w / 2, VIEW_H - 34);
+    if (game.touchMode) c.fillText(`tap the middle to ${on}`, VIEW.w / 2, VIEW_H - 34, VIEW.w - 80);
+    else c.fillText(`space to ${on}   ·   R to replay this stage   ·   enter to start over from the beginning`, VIEW.w / 2, VIEW_H - 34, VIEW.w - 80);
   }
 }
