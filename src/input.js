@@ -1,5 +1,5 @@
 const BLOCKED = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-const SETTING_KEYS = new Set(['KeyH', 'KeyX', 'KeyM', 'KeyF', 'Minus', 'Equal', 'NumpadSubtract', 'NumpadAdd']);
+const SETTING_KEYS = new Set(['KeyH', 'KeyX', 'KeyM', 'KeyF', 'Minus', 'Equal', 'NumpadSubtract', 'NumpadAdd', 'Slash', 'KeyI']);
 
 // Keyboard plus the first connected gamepad. Call poll() at the start of a frame and endFrame() at the end.
 export class Input {

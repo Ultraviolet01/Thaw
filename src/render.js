@@ -1,7 +1,7 @@
 import { VIEW, VIEW_H, VIEW_MIN_W, VIEW_MAX_W, PULSE, THRESHOLDS, WIND, AVALANCHE, QUAKE, LAKE } from './config.js';
 import { groundY, floorY, inLower, lowerRoute } from './terrain.js';
 import { Character } from './character.js';
-import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION, ENDING_DONE } from './game.js';
+import { COMPANION_SCALE, PLAYER_SCALE, TRANSITION, ENDING_DONE, HOWTO_READ } from './game.js';
 import { HOUSES, WALKERS, STAYERS, HEARTH_X, FLOWERS, LINES, childX } from './prologue.js';
 import { VILLAGE, villager } from './village.js';
 import { rumbleSeconds, shaking } from './slopes.js';
@@ -475,6 +475,7 @@ export class Renderer {
     this.watchSpeed(dt);
     if (game.mode === 'title') return this.drawGate(game);
     if (game.mode === 'prologue') return this.drawPrologue(game, dt);
+    if (game.mode === 'howto') return this.drawHowTo(game);
     if (game.level !== this.levelRef) this.setLevel(game.level);
     this.lowNow = game.ember.low;
     const w = game.displayWarmth();
@@ -567,6 +568,7 @@ export class Renderer {
     }
     this.drawToast(c, game);
     this.drawTurnHint(c);
+    if ((game.mode === 'play' || game.mode === 'paused') && !game.transition) this.drawHelpButton(c, game);
     if (game.touchMode && game.mode === 'play' && !game.transition) {
       this.drawPauseButton(c);
       const settling = game.intro && game.intro.t < game.introLock();
@@ -2803,40 +2805,7 @@ export class Renderer {
     c.beginPath();
     c.rect(0, 0, VIEW.w, VIEW_H);
     c.clip();
-    // The title is the frosted glass itself, close up: the night hills faint behind it, and the warmth of her coal
-    // rising from below, melting a little patch in time with her heart. The window it belongs to is kept for the end.
-    const sky = c.createLinearGradient(0, 0, 0, VIEW_H);
-    sky.addColorStop(0, '#1c2a31');
-    sky.addColorStop(1, '#3d5260');
-    c.fillStyle = sky;
-    c.fillRect(0, 0, VIEW.w, VIEW_H);
-    [['#2c3e49', 430, 90, 0.0031], ['#34495a', 500, 60, 0.0047], ['#3f5666', 575, 36, 0.0068]].forEach(([col, base, amp, f], i) => {
-      c.fillStyle = col;
-      c.beginPath();
-      c.moveTo(0, VIEW_H);
-      for (let x = 0; x <= VIEW.w + 12; x += 12) c.lineTo(x, base - Math.abs(Math.sin(x * f + i * 1.7)) * amp);
-      c.lineTo(VIEW.w, VIEW_H);
-      c.closePath();
-      c.fill();
-    });
-    c.fillStyle = 'rgba(178,202,214,0.66)';
-    c.fillRect(0, 0, VIEW.w, VIEW_H);
-    c.globalAlpha = 0.9;
-    for (let x = 0; x < VIEW.w; x += TILE_W) c.drawImage(this.crystals, x, 0);
-    c.globalAlpha = 1;
-    const beat = Math.exp(-((t % 1) * 5));
-    const px = VIEW.w * 0.62;
-    // Her coal's light comes up through the frost, warm and soft; just above it the glass has melted clear.
-    glow(c, px, VIEW_H + 40, 330 + 20 * beat, '255,186,120', 0.34 + 0.08 * beat);
-    const melt = c.createRadialGradient(px, VIEW_H + 20, 10, px, VIEW_H + 20, 120 + 10 * beat);
-    melt.addColorStop(0, 'rgba(40,46,48,0.55)');
-    melt.addColorStop(1, 'rgba(40,46,48,0)');
-    c.fillStyle = melt;
-    c.fillRect(0, 0, VIEW.w, VIEW_H);
-    c.save();
-    c.globalCompositeOperation = 'lighter';
-    glow(c, px, VIEW_H + 10, 70 + 8 * beat, '255,170,90', 0.35 + 0.15 * beat);
-    c.restore();
+    this.drawGlass(c, t);
 
     // Written into the frost, as every line in the game is.
     c.textAlign = 'center';
@@ -2900,6 +2869,140 @@ export class Renderer {
       c.fillStyle = `rgba(0,0,0,${1 - t / 1.5})`;
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
+  }
+
+  // The frosted glass close up, as on the title: the night hills faint behind it, and the warmth of her coal
+  // rising from below.
+  drawGlass(c, t) {
+    // The window this glass belongs to is kept for the end.
+    const sky = c.createLinearGradient(0, 0, 0, VIEW_H);
+    sky.addColorStop(0, '#1c2a31');
+    sky.addColorStop(1, '#3d5260');
+    c.fillStyle = sky;
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    [['#2c3e49', 430, 90, 0.0031], ['#34495a', 500, 60, 0.0047], ['#3f5666', 575, 36, 0.0068]].forEach(([col, base, amp, f], i) => {
+      c.fillStyle = col;
+      c.beginPath();
+      c.moveTo(0, VIEW_H);
+      for (let x = 0; x <= VIEW.w + 12; x += 12) c.lineTo(x, base - Math.abs(Math.sin(x * f + i * 1.7)) * amp);
+      c.lineTo(VIEW.w, VIEW_H);
+      c.closePath();
+      c.fill();
+    });
+    c.fillStyle = 'rgba(178,202,214,0.66)';
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    c.globalAlpha = 0.9;
+    for (let x = 0; x < VIEW.w; x += TILE_W) c.drawImage(this.crystals, x, 0);
+    c.globalAlpha = 1;
+    const beat = Math.exp(-((t % 1) * 5));
+    const px = VIEW.w * 0.62;
+    // Her coal's light comes up through the frost, warm and soft; just above it the glass has melted clear.
+    glow(c, px, VIEW_H + 40, 330 + 20 * beat, '255,186,120', 0.34 + 0.08 * beat);
+    const melt = c.createRadialGradient(px, VIEW_H + 20, 10, px, VIEW_H + 20, 120 + 10 * beat);
+    melt.addColorStop(0, 'rgba(40,46,48,0.55)');
+    melt.addColorStop(1, 'rgba(40,46,48,0)');
+    c.fillStyle = melt;
+    c.fillRect(0, 0, VIEW.w, VIEW_H);
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    glow(c, px, VIEW_H + 10, 70 + 8 * beat, '255,170,90', 0.35 + 0.15 * beat);
+    c.restore();
+  }
+
+  // How to play: written on the frosted glass between the prologue and the first stage, and any time from the
+  // ? button or the pause screen. On a touch screen it speaks of taps and its choices are buttons.
+  drawHowTo(game) {
+    const c = this.ctx;
+    const h = game.howto;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    c.setTransform(this.scale, 0, 0, this.scale, this.ox, this.oy);
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, VIEW.w, VIEW_H);
+    c.clip();
+    this.drawGlass(c, game.time);
+    const touch = game.touchMode;
+    const k = this.textBoost || 1;
+    const cx = VIEW.w / 2;
+    const fade = clamp01(h.t / 0.6);
+    c.globalAlpha = fade;
+    c.textAlign = 'center';
+    c.fillStyle = 'rgba(22,40,50,0.86)';
+    c.font = `90px ${HAND}`;
+    c.fillText('how to play', cx, 108);
+    const rows = [
+      ['walk', touch ? 'hold the left or right of the screen' : 'the arrows, or A and D'],
+      ['pulse', `${touch ? 'hold the middle of the screen' : 'hold space'}: it thaws what the frost has taken, trees, lanterns and people`],
+      ['in time', 'pulse with her heartbeat and it reaches further, for less warmth'],
+      ['warmth', 'every pulse costs warmth, and so does the cold. rest by lit lanterns, warmed trees and fires'],
+      ['together', 'everyone you free walks with you and makes your pulse stronger. who you bring home lights a window at the end'],
+      ['danger', 'the cold always warns you first: watch the snow, and listen to the ice'],
+      ['her light', game.settings.hard ? 'if it goes out, the stage begins again' : 'if it goes out, she wakes by the last lantern or friend, but the last one to join her loses their fire'],
+      ['pause', touch ? 'the button in the corner. this page again: the ? button' : 'esc   ·   volume - and +   ·   shake X   ·   mute M   ·   full screen F   ·   this page again: ?'],
+    ];
+    const lx = cx - 250;
+    const top = 178;
+    const gap = 40 * Math.min(k, 1.25);
+    rows.forEach(([label, text], i) => {
+      const y = top + i * gap;
+      c.font = this.serif('italic 300 ', 17);
+      c.textAlign = 'right';
+      c.fillStyle = 'rgba(92,52,22,0.9)';
+      c.fillText(label, lx - 18, y);
+      c.font = this.serif('300 ', 17);
+      c.textAlign = 'left';
+      c.fillStyle = 'rgba(22,40,50,0.92)';
+      c.fillText(text, lx, y, VIEW.w - lx - 50);
+    });
+    // Begin (once it has been up a moment) or skip; or, opened during the walk, back.
+    const y = Math.min(VIEW_H - 46, top + rows.length * gap + 34);
+    c.textAlign = 'center';
+    c.font = this.serif('300 ', 18);
+    if (h.from === 'start') {
+      const ready = clamp01(h.t / HOWTO_READ);
+      if (touch) {
+        const bw = 220, bh = 54 * Math.min(1.3, k);
+        this.tapButton(c, 'skip', cx - bw / 2 - 12, y, bw, bh, 'Escape');
+        c.globalAlpha = fade * (ready < 1 ? 0.45 : 1);
+        if (ready >= 1) this.tapButton(c, 'begin', cx + bw / 2 + 12, y, bw, bh, 'Enter');
+        else {
+          c.fillStyle = 'rgba(22,40,50,0.6)';
+          c.fillText('begin', cx + bw / 2 + 12, y + 6);
+          c.fillRect(cx + 12 + 20, y + bh / 2 - 8, (bw - 40) * ready, 2);
+        }
+      } else {
+        c.fillStyle = `rgba(22,40,50,${ready < 1 ? 0.45 : 0.6 + 0.3 * Math.sin(game.time * 2)})`;
+        const line = 'space to begin   ·   esc to skip';
+        c.fillText(line, cx, y, VIEW.w - 80);
+        const w = Math.min(VIEW.w - 80, c.measureText(line).width);
+        if (ready < 1) c.fillRect(cx - w / 2, y + 12, w * ready, 2);
+      }
+    } else if (touch) {
+      this.tapButton(c, 'back', cx, y, 220, 54 * Math.min(1.3, k), 'Escape');
+    } else {
+      c.fillStyle = 'rgba(22,40,50,0.7)';
+      c.fillText('esc or space to go back', cx, y, VIEW.w - 80);
+    }
+    c.globalAlpha = 1;
+    this.drawTurnHint(c);
+    c.restore();
+  }
+
+  // During the walk, a ? button beside the full-screen one (and the pause button on a touch screen): how to play.
+  drawHelpButton(c, game) {
+    const x = VIEW.w - (game.touchMode ? 140 : 96), y = 16;
+    c.strokeStyle = 'rgba(225,236,244,0.45)';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.arc(x + 15, y + 15, 12, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = 'rgba(225,236,244,0.6)';
+    c.font = this.serif('600 ', 15);
+    c.textAlign = 'center';
+    c.fillText('?', x + 15, y + 20);
+    this.addTap(x - 8, y - 8, x + 38, y + 38, 'Slash');
   }
 
   // The prologue: the world before the cold, then the cold, drawn with the same pieces as the game.
@@ -3316,7 +3419,7 @@ export class Renderer {
       const st = game.settings;
       const bw = Math.min(250, (VIEW.w - 120) / 4), bh = 56 * Math.min(1.3, this.textBoost || 1);
       const row = (labels, y) => labels.forEach(([label, code], i) => this.tapButton(c, label, VIEW.w / 2 + (i - (labels.length - 1) / 2) * (bw + 16), y, bw, bh, code));
-      row([['resume', 'Escape'], ['replay this stage', 'KeyR'], ['start over', 'Enter']], VIEW_H / 2 + 10);
+      row([['resume', 'Escape'], ['how to play', 'Slash'], ['replay this stage', 'KeyR'], ['start over', 'Enter']], VIEW_H / 2 + 10);
       row([['volume -', 'Minus'], ['volume +', 'Equal'], [`shake: ${st.shake ? 'on' : 'off'}`, 'KeyX'], [`walk: ${st.hard ? 'hard' : 'gentle'}`, 'KeyH']], VIEW_H / 2 + 30 + bh);
       c.fillStyle = '#17303b';
       c.font = this.serif('italic 300 ', 15);
@@ -3328,7 +3431,7 @@ export class Renderer {
       'pulse: hold space or A',
       'mute: M   ·   volume: - and +   ·   screen shake: X   ·   full screen: F',
       `replay this stage: R   ·   the walk: ${game.settings.hard ? 'hard' : 'gentle'} (H to change)`,
-      'enter to start over from the beginning',
+      'how to play: ?   ·   enter to start over from the beginning',
       'on a touch screen: hold left or right to walk, the middle to pulse, swipe down for the low way',
       'esc or start to resume',
     ];

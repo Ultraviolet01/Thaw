@@ -32,6 +32,7 @@ Controls
 - Screen shake on or off: X
 - A gentle or a hard walk: H, on the title or the pause screen
 - Full screen: F
+- How to play, any time: ? (or the ? button in the corner)
 - Replay the stage: R
 - Start over from the beginning: Enter (at the stage end or when paused)
 - Touch: hold the left or right of the screen to walk, the middle to pulse, swipe down for the low way

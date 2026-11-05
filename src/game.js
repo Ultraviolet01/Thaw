@@ -28,6 +28,8 @@ export const TRANSITION = { frostIn: 2.2, hold: 0.35, thaw: 3.2 };
 const between = ([a, b]) => a + Math.random() * (b - a);
 // Seconds into the ending before a key press goes back to the title.
 export const ENDING_DONE = 19;
+// Seconds the how-to-play page is shown before it can be closed with "begin" (it can be skipped at once).
+export const HOWTO_READ = 3;
 
 export class Game {
   constructor(levels, audio) {
@@ -155,6 +157,16 @@ export class Game {
         this.audio.fadeTheme();
       }
       if (this.prologue.done) this.endPrologue();
+      return;
+    }
+
+    if (this.mode === 'howto') {
+      this.updateHowTo(dt, input);
+      return;
+    }
+    // How to play, any time in play or from the pause screen: ? or I, or the ? button.
+    if ((this.mode === 'play' || this.mode === 'paused') && !this.transition && (input.wasPressed('Slash') || input.wasPressed('KeyI'))) {
+      this.openHowTo('game');
       return;
     }
 
@@ -425,11 +437,42 @@ export class Game {
     this.audio.setWind(0);
     this.audio.resetLayers();
     this.prologue = null;
-    this.mode = 'play';
-    this.intro = { t: 0, pulsed: false };
-    this.titleFade = 1;
-    this.holdLock = true;
     saveStageStart(0, this.ledger, []);
+    // Before she rises from the snow: how to play, to read or to skip.
+    this.openHowTo('start');
+  }
+
+  // The how-to-play page. 'start': between the prologue and the first stage, closed with "begin" once it has been up
+  // a moment, or skipped. 'game': opened from the ? button or the pause screen, and closed back to where it was.
+  openHowTo(from) {
+    this.howto = { t: 0, from, back: this.mode };
+    this.mode = 'howto';
+    this.pulsing = false;
+  }
+
+  closeHowTo() {
+    const h = this.howto;
+    this.howto = null;
+    this.holdLock = true;
+    if (h.from === 'start') {
+      this.mode = 'play';
+      this.intro = { t: 0, pulsed: false };
+      this.titleFade = 1;
+    } else {
+      this.mode = h.back;
+    }
+  }
+
+  updateHowTo(dt, input) {
+    const h = this.howto;
+    h.t += dt;
+    // Skip (or go back) at any time, but not with the same press that skipped the prologue.
+    if (h.t > 0.6 && (input.pausePressed || input.wasPressed('Slash'))) {
+      this.closeHowTo();
+      return;
+    }
+    const ready = h.from !== 'start' || h.t > HOWTO_READ;
+    if (ready && (input.pulsePressed || this.startOverPressed(input))) this.closeHowTo();
   }
 
   // The first seconds of the stage: out of black, the figure rises from the snow, its ember pulses once and
