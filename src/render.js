@@ -2959,7 +2959,7 @@ export class Renderer {
     const rows = [
       ['walk', touch ? 'hold the left or right of the screen' : 'the arrows, or A and D'],
       ['pulse', `${touch ? 'hold the middle of the screen' : 'hold space'}: it thaws what the frost has taken, trees, lanterns and people`],
-      ['in time', 'pulse with her heartbeat and it reaches further, for less warmth'],
+      ['in time', touch ? 'tap the middle in time with her heartbeat and the pulse reaches further, for less warmth' : 'pulse with her heartbeat and it reaches further, for less warmth'],
       ['warmth', 'every pulse costs warmth, and so does the cold. rest by lit lanterns, warmed trees and fires'],
       ['together', 'everyone you free walks with you and makes your pulse stronger. who you bring home lights a window at the end'],
       ['danger', 'the cold always warns you first: watch the snow, and listen to the ice'],

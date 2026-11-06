@@ -35,7 +35,7 @@ Controls
 - How to play, any time: ? (or the ? button in the corner)
 - Replay the stage: R
 - Start over from the beginning: Enter (at the stage end or when paused)
-- Touch: hold the left or right of the screen to walk, the middle to pulse, swipe down for the low way
+- Touch: hold the left or right of the screen to walk; hold the middle to pulse, or tap it in time with her heartbeat for a stronger pulse; swipe down in the middle for the low way
 
 Your walk is saved in the browser: the title offers to continue, or to pick any stage you have reached.
 

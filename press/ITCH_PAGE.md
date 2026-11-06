@@ -38,7 +38,7 @@ Walk her home through five stages of a frozen world: a still, dark plain, a wind
 - **A gentle or a hard walk:** H, on the title or the pause screen. On a gentle walk, if her light goes out the last one to join her freezes where she fell. On a hard walk, the stage begins again. The endings are the same either way.
 - **Full screen:** F
 - **How to play, any time:** ? (or the ? button in the corner). It is also shown once after the prologue, to read or skip.
-- **Touch:** hold the left or right of the screen to walk, the middle to pulse, swipe down for the low way. Hold your phone sideways.
+- **Touch:** hold the left or right of the screen to walk. Hold the middle to pulse, or tap the middle in time with her heartbeat for a stronger pulse. Swipe down in the middle for the low way. The pause and ? buttons are in the corner. Hold your phone sideways.
 
 Best with sound on.
 
