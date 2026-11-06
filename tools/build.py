@@ -20,13 +20,13 @@ PLAY_NOTES = """THAW
 
 1. Unzip this folder.
 2. Double-click index.html. It opens in your web browser.
-3. Press any key to wake. Sound on.
+3. Press any key to wake. Sound on. Click or press Space to skip the prologue.
 
 Controls
 - Walk: Left and Right arrows, or A and D (or a gamepad's left stick)
 - Pulse: hold Space or A (you cannot move while pulsing). Press it in time with her heartbeat for a stronger pulse.
 - Take the low way at a cairn: Down arrow or S
-- Pause: Esc or P
+- Pause: P (Esc too, outside full screen)
 - Mute: M
 - Volume: - and +
 - Screen shake on or off: X

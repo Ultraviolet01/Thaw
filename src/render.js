@@ -2709,7 +2709,7 @@ export class Renderer {
     c.fillStyle = `rgba(22,40,50,${0.75 * a * clamp01((t - 5) / 1)})`;
     const controls = game.touchMode
       ? 'walk: hold the left or right   ·   pulse: hold the middle   ·   pause: the button in the corner'
-      : 'walk: arrows or A and D   ·   pulse: hold space   ·   pause: esc   ·   mute: M   ·   full screen: F';
+      : 'walk: arrows or A and D   ·   pulse: hold space   ·   pause: P   ·   mute: M   ·   full screen: F';
     c.fillText(controls, VIEW.w / 2, VIEW_H - 40, VIEW.w - 80);
     c.font = this.serif('italic 300 ', 13);
     c.fillStyle = `rgba(22,40,50,${0.6 * a * clamp01((t - 5) / 1)})`;
@@ -2964,7 +2964,7 @@ export class Renderer {
       ['together', 'everyone you free walks with you and makes your pulse stronger. who you bring home lights a window at the end'],
       ['danger', 'the cold always warns you first: watch the snow, and listen to the ice'],
       ['her light', game.settings.hard ? 'if it goes out, the stage begins again' : 'if it goes out, she wakes by the last lantern or friend, but the last one to join her loses their fire'],
-      ['pause', touch ? 'the button in the corner. this page again: the ? button' : 'esc   ·   volume - and +   ·   shake X   ·   mute M   ·   full screen F   ·   this page again: ?'],
+      ['pause', touch ? 'the button in the corner. this page again: the ? button' : 'P   ·   volume - and +   ·   shake X   ·   mute M   ·   full screen F   ·   this page again: ?'],
     ];
     const lx = cx - 250;
     const top = 178;
@@ -2984,30 +2984,31 @@ export class Renderer {
     const y = Math.min(VIEW_H - 46, top + rows.length * gap + 34);
     c.textAlign = 'center';
     c.font = this.serif('300 ', 18);
+    // Buttons to click or tap (Esc is the browser's in full screen, so it is not what is offered); Space works too.
+    const bw = 220, bh = 54 * Math.min(1.3, k);
     if (h.from === 'start') {
       const ready = clamp01(h.t / HOWTO_READ);
-      if (touch) {
-        const bw = 220, bh = 54 * Math.min(1.3, k);
-        this.tapButton(c, 'skip', cx - bw / 2 - 12, y, bw, bh, 'Escape');
-        c.globalAlpha = fade * (ready < 1 ? 0.45 : 1);
-        if (ready >= 1) this.tapButton(c, 'begin', cx + bw / 2 + 12, y, bw, bh, 'Enter');
-        else {
-          c.fillStyle = 'rgba(22,40,50,0.6)';
-          c.fillText('begin', cx + bw / 2 + 12, y + 6);
-          c.fillRect(cx + 12 + 20, y + bh / 2 - 8, (bw - 40) * ready, 2);
-        }
-      } else {
-        c.fillStyle = `rgba(22,40,50,${ready < 1 ? 0.45 : 0.6 + 0.3 * Math.sin(game.time * 2)})`;
-        const line = 'space to begin   ·   esc to skip';
-        c.fillText(line, cx, y, VIEW.w - 80);
-        const w = Math.min(VIEW.w - 80, c.measureText(line).width);
-        if (ready < 1) c.fillRect(cx - w / 2, y + 12, w * ready, 2);
+      this.tapButton(c, 'skip', cx - bw / 2 - 12, y, bw, bh, 'Escape');
+      c.globalAlpha = fade * (ready < 1 ? 0.45 : 1);
+      if (ready >= 1) this.tapButton(c, 'begin', cx + bw / 2 + 12, y, bw, bh, 'Enter');
+      else {
+        c.fillStyle = 'rgba(22,40,50,0.6)';
+        c.fillText('begin', cx + bw / 2 + 12, y + 6);
+        c.fillRect(cx + 12 + 20, y + bh / 2 - 8, (bw - 40) * ready, 2);
       }
-    } else if (touch) {
-      this.tapButton(c, 'back', cx, y, 220, 54 * Math.min(1.3, k), 'Escape');
+      c.globalAlpha = fade;
+      if (!touch) {
+        c.font = this.serif('italic 300 ', 14);
+        c.fillStyle = 'rgba(22,40,50,0.6)';
+        c.fillText('or press space to begin', cx + bw / 2 + 12, y + bh / 2 + 22);
+      }
     } else {
-      c.fillStyle = 'rgba(22,40,50,0.7)';
-      c.fillText('esc or space to go back', cx, y, VIEW.w - 80);
+      this.tapButton(c, 'back', cx, y, bw, bh, 'Escape');
+      if (!touch) {
+        c.font = this.serif('italic 300 ', 14);
+        c.fillStyle = 'rgba(22,40,50,0.6)';
+        c.fillText('or press space', cx, y + bh / 2 + 22);
+      }
     }
     c.globalAlpha = 1;
     this.drawTurnHint(c);
@@ -3300,10 +3301,10 @@ export class Renderer {
       c.fillRect(0, 0, VIEW.w, VIEW_H);
     }
     if (t > 3 && t < 55) {
-      c.font = this.serif('300 ', 13);
+      c.font = this.serif('300 ', 16);
       c.textAlign = 'right';
-      c.fillStyle = `rgba(200,212,222,${0.35 * clamp01((t - 3) / 2)})`;
-      c.fillText(game.touchMode ? 'tap to skip' : 'esc to skip', VIEW.w - 28, VIEW_H - 24);
+      c.fillStyle = `rgba(214,226,234,${0.7 * clamp01((t - 3) / 2)})`;
+      c.fillText(game.touchMode ? 'tap to skip' : 'click to skip', VIEW.w - 28, VIEW_H - 24);
     }
     c.restore();
   }
@@ -3458,7 +3459,7 @@ export class Renderer {
       `replay this stage: R   ·   the walk: ${game.settings.hard ? 'hard' : 'gentle'} (H to change)`,
       'how to play: ?   ·   enter to start over from the beginning',
       'on a touch screen: hold left or right to walk, the middle to pulse, swipe down for the low way',
-      'esc or start to resume',
+      'P or start to resume',
     ];
     const k = this.textBoost || 1;
     lines.forEach((l, i) => c.fillText(l, VIEW.w / 2, VIEW_H / 2 - 10 + i * 32 * Math.min(k, 1.25), VIEW.w - 80));

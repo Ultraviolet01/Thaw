@@ -151,8 +151,10 @@ export class Game {
     if (this.mode === 'prologue') {
       if (input.wasPressed('KeyM')) this.audio.toggleMute();
       this.prologue.update(dt, this.audio);
-      // Esc skips it; on a touch screen, a tap does (not the tap that started it).
-      if (input.pausePressed || (this.touchMode && this.prologue.t > 1 && input.wasPressed('Pointer'))) {
+      // A click or tap skips it, or Space or Enter (not the press that started it). Esc does too, but in full screen
+      // the browser keeps Esc for leaving full screen, so it is not the one offered.
+      const go = input.wasPressed('Pointer') || input.pulsePressed || input.wasPressed('Enter');
+      if (input.pausePressed || (this.prologue.t > 1 && go)) {
         this.prologue.skip();
         this.audio.fadeTheme();
       }

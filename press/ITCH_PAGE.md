@@ -31,7 +31,7 @@ Walk her home through five stages of a frozen world: a still, dark plain, a wind
 - **Walk:** arrows or A / D, or the left stick
 - **Pulse:** hold Space or A. Press it in time with her heartbeat for a stronger pulse.
 - **The low way at a cairn:** down
-- **Pause:** Esc, P or Start
+- **Pause:** P or Start (Esc too, outside full screen)
 - **Mute:** M
 - **Volume:** - and +
 - **Screen shake:** X
